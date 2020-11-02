@@ -26,8 +26,6 @@ import {
   MenuItem,
   OverlayTrigger,
   Radio,
-  Tab,
-  Tabs,
   Tooltip,
 } from 'react-bootstrap';
 import Popover from 'src/common/components/Popover';
@@ -37,6 +35,7 @@ import 'react-datetime/css/react-datetime.css';
 import moment from 'moment';
 import { t, styled, withTheme } from '@superset-ui/core';
 
+import Tabs from 'src/common/components/Tabs';
 import {
   buildTimeRangeString,
   formatTimeRange,
@@ -221,7 +220,6 @@ class DateFilterControl extends React.Component {
 
     this.close = this.close.bind(this);
     this.handleClick = this.handleClick.bind(this);
-    this.handleClickTrigger = this.handleClickTrigger.bind(this);
     this.isValidSince = this.isValidSince.bind(this);
     this.isValidUntil = this.isValidUntil.bind(this);
     this.onEnter = this.onEnter.bind(this);
@@ -306,17 +304,6 @@ class DateFilterControl extends React.Component {
     }
   }
 
-  handleClickTrigger() {
-    // when user clicks OverlayTrigger,
-    // popoverContainer component will be created after handleClickTrigger
-    // and before handleClick handler
-    if (!this.popoverContainer) {
-      this.props.onOpenDateFilterControl();
-    } else {
-      this.props.onCloseDateFilterControl();
-    }
-  }
-
   close() {
     let val;
     if (
@@ -369,6 +356,11 @@ class DateFilterControl extends React.Component {
   }
 
   handleVisibleChange(visible) {
+    if (visible) {
+      this.props.onOpenDateFilterControl();
+    } else {
+      this.props.onCloseDateFilterControl();
+    }
     this.setState({ popoverVisible: visible });
   }
 
@@ -442,15 +434,17 @@ class DateFilterControl extends React.Component {
         }}
       >
         <Tabs
-          defaultActiveKey={this.state.tab === TABS.DEFAULTS ? 1 : 2}
+          defaultActiveKey={this.state.tab === TABS.DEFAULTS ? '1' : '2'}
           id="type"
           className="time-filter-tabs"
           onSelect={this.changeTab}
         >
-          <Tab eventKey={1} title="Defaults">
-            <FormGroup>{timeFrames}</FormGroup>
-          </Tab>
-          <Tab eventKey={2} title="Custom">
+          <Tabs.TabPane key="1" tab="Defaults" forceRender>
+            <div style={{ marginLeft: '8px' }}>
+              <FormGroup>{timeFrames}</FormGroup>
+            </div>
+          </Tabs.TabPane>
+          <Tabs.TabPane key="2" tab="Custom">
             <FormGroup>
               <PopoverSection
                 title="Relative to today"
@@ -580,7 +574,7 @@ class DateFilterControl extends React.Component {
                 </div>
               </PopoverSection>
             </FormGroup>
-          </Tab>
+          </Tabs.TabPane>
         </Tabs>
         <div className="clearfix">
           <Button
@@ -606,7 +600,6 @@ class DateFilterControl extends React.Component {
           trigger="click"
           placement="right"
           content={this.renderPopover()}
-          onClick={this.handleClickTrigger}
           visible={this.state.popoverVisible}
           onVisibleChange={this.handleVisibleChange}
         >

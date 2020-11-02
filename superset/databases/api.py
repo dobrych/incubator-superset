@@ -27,6 +27,7 @@ from flask_babel import gettext as _
 from marshmallow import ValidationError
 from sqlalchemy.engine.url import make_url
 from sqlalchemy.exc import (
+    DBAPIError,
     NoSuchModuleError,
     NoSuchTableError,
     OperationalError,
@@ -38,6 +39,7 @@ from superset.constants import RouteMethod
 from superset.databases.commands.create import CreateDatabaseCommand
 from superset.databases.commands.delete import DeleteDatabaseCommand
 from superset.databases.commands.exceptions import (
+    DatabaseConnectionFailedError,
     DatabaseCreateFailedError,
     DatabaseDeleteDatasetsExistFailedError,
     DatabaseDeleteFailedError,
@@ -165,6 +167,7 @@ class DatabaseRestApi(BaseSupersetModelRestApi):
 
     apispec_parameter_schemas = {
         "database_schemas_query_schema": database_schemas_query_schema,
+        "get_export_ids_schema": get_export_ids_schema,
     }
     openapi_spec_tag = "Database"
     openapi_spec_component_schemas = (
@@ -228,6 +231,8 @@ class DatabaseRestApi(BaseSupersetModelRestApi):
             return self.response(201, id=new_model.id, result=item)
         except DatabaseInvalidError as ex:
             return self.response_422(message=ex.normalized_messages())
+        except DatabaseConnectionFailedError as ex:
+            return self.response_422(message=str(ex))
         except DatabaseCreateFailedError as ex:
             logger.error(
                 "Error creating model %s: %s", self.__class__.__name__, str(ex)
@@ -299,6 +304,8 @@ class DatabaseRestApi(BaseSupersetModelRestApi):
             return self.response_404()
         except DatabaseInvalidError as ex:
             return self.response_422(message=ex.normalized_messages())
+        except DatabaseConnectionFailedError as ex:
+            return self.response_422(message=str(ex))
         except DatabaseUpdateFailedError as ex:
             logger.error(
                 "Error updating model %s: %s", self.__class__.__name__, str(ex)
@@ -589,7 +596,7 @@ class DatabaseRestApi(BaseSupersetModelRestApi):
             )
         except DatabaseSecurityUnsafeError as ex:
             return self.response_422(message=ex)
-        except OperationalError:
+        except DBAPIError:
             logger.warning("Connection failed")
             return self.response(
                 500,
@@ -676,9 +683,7 @@ class DatabaseRestApi(BaseSupersetModelRestApi):
             content:
               application/json:
                 schema:
-                  type: array
-                  items:
-                    type: integer
+                  $ref: '#/components/schemas/get_export_ids_schema'
           responses:
             200:
               description: A zip file with database(s) and dataset(s) as YAML
