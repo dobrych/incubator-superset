@@ -26,7 +26,7 @@ from superset.databases.commands.exceptions import DatabaseNotFoundError
 from superset.databases.dao import DatabaseDAO
 from superset.importexport.commands.base import ExportModelsCommand
 from superset.models.core import Database
-from superset.utils.dict_import_export import IMPORT_EXPORT_VERSION, sanitize
+from superset.utils.dict_import_export import EXPORT_VERSION, sanitize
 
 logger = logging.getLogger(__name__)
 
@@ -55,7 +55,7 @@ class ExportDatabasesCommand(ExportModelsCommand):
             except json.decoder.JSONDecodeError:
                 logger.info("Unable to decode `extra` field: %s", payload["extra"])
 
-        payload["version"] = IMPORT_EXPORT_VERSION
+        payload["version"] = EXPORT_VERSION
 
         file_content = yaml.safe_dump(payload, sort_keys=False)
         yield file_name, file_content
@@ -70,7 +70,7 @@ class ExportDatabasesCommand(ExportModelsCommand):
                 include_defaults=True,
                 export_uuids=True,
             )
-            payload["version"] = IMPORT_EXPORT_VERSION
+            payload["version"] = EXPORT_VERSION
             payload["database_uuid"] = str(model.uuid)
 
             file_content = yaml.safe_dump(payload, sort_keys=False)

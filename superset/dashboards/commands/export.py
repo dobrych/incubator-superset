@@ -27,7 +27,7 @@ from superset.dashboards.commands.exceptions import DashboardNotFoundError
 from superset.dashboards.dao import DashboardDAO
 from superset.importexport.commands.base import ExportModelsCommand
 from superset.models.dashboard import Dashboard
-from superset.utils.dict_import_export import IMPORT_EXPORT_VERSION, sanitize
+from superset.utils.dict_import_export import EXPORT_VERSION, sanitize
 
 logger = logging.getLogger(__name__)
 
@@ -62,7 +62,7 @@ class ExportDashboardsCommand(ExportModelsCommand):
                 except json.decoder.JSONDecodeError:
                     logger.info("Unable to decode `%s` field: %s", key, value)
 
-        payload["version"] = IMPORT_EXPORT_VERSION
+        payload["version"] = EXPORT_VERSION
 
         file_content = yaml.safe_dump(payload, sort_keys=False)
         yield file_name, file_content
