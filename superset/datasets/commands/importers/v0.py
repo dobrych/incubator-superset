@@ -310,4 +310,6 @@ class ImportDatasetsCommand(BaseCommand):
                 yaml.safe_load(content)
             except yaml.parser.ParserError:
                 logger.exception("Invalid YAML file")
+                # TODO (betodealmeida): raise ValidationError or fix base class
+                # to handle CommandInvalidError as non-breaking
                 raise

@@ -15,7 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 
-from typing import Any, Dict
+from typing import Any, Dict, List, Optional, Tuple
 
 import yaml
 from marshmallow import fields, Schema, validate
@@ -25,17 +25,25 @@ from sqlalchemy.orm import Session
 from superset import db
 from superset.commands.base import BaseCommand
 from superset.commands.exceptions import CommandInvalidError
+from superset.commands.importers.exceptions import IncorrectVersionError
 from superset.models.helpers import ImportExportMixin
 
 METADATA_FILE_NAME = "metadata.yaml"
 IMPORT_VERSION = "1.0.0"
 
 
-def load_yaml(file_name: str, content: str) -> Dict[str, Any]:
+def load_yaml(
+    file_name: str, content: str
+) -> Tuple[Optional[Dict[str, Any]], Optional[ValidationError]]:
+    """Try to load a YAML file"""
     try:
-        return yaml.safe_load(content)
+        config = yaml.safe_load(content)
+        exc = None
     except yaml.parser.ParserError:
-        raise CommandInvalidError(f'Unable to load file "{file_name}"')
+        config = None
+        exc = ValidationError({file_name: "Not a valida YAML file"})
+
+    return config, exc
 
 
 class MetadataSchema(Schema):
@@ -51,7 +59,7 @@ class ImportModelsCommand(BaseCommand):
     prefix = ""
 
     # pylint: disable=unused-argument
-    def __init__(self, contents: Dict[str, Any], *args: Any, **kwargs: Any):
+    def __init__(self, contents: Dict[str, str], *args: Any, **kwargs: Any):
         self.contents = contents
         self._configs: Dict[str, Any] = {}
 
@@ -87,13 +95,38 @@ class ImportModelsCommand(BaseCommand):
         cls.schema().load(config)
 
     def validate(self) -> None:
+        """
+        Validate that the import can be done and matches the schema.
+
+        When validating the import we raise IncorrectVersionError when the
+        file is not supported (eg, a v0 import for the v1 importer), which
+        allows the dispatcher to try a different command.
+
+        If the file is supported we collect any validation errors, and if
+        there are any we raise CommandInvalidError with all the collected
+        messages.
+        """
+        exceptions: List[ValidationError] = []
+
+        metadata: Optional[Dict[str, Any]] = None
         if METADATA_FILE_NAME not in self.contents:
-            raise CommandInvalidError(
-                f'Missing file "{METADATA_FILE_NAME}" in contents'
-            )
+            raise IncorrectVersionError(f"Missing {METADATA_FILE_NAME}")
+
         content = self.contents[METADATA_FILE_NAME]
-        metadata = load_yaml(METADATA_FILE_NAME, content)
-        MetadataSchema().load(metadata)
+        metadata, exc = load_yaml(METADATA_FILE_NAME, content)
+        if exc:
+            raise IncorrectVersionError("Not a YAML file")
+
+        try:
+            MetadataSchema().load(metadata)
+        except ValidationError as exc:
+            # if it's a version error raise IncorrectVersionError so that
+            # the dispatcher can try the next version; otherwise store
+            # the validation message
+            if "version" in exc.messages:
+                raise IncorrectVersionError(exc.messages["version"])
+            exc.messages = {METADATA_FILE_NAME: exc.messages}
+            exceptions.append(exc)
 
         # validate that the type in METADATA_FILE_NAME matches the
         # type of the model being imported; this prevents exporting
@@ -103,13 +136,22 @@ class ImportModelsCommand(BaseCommand):
         try:
             type_validator(metadata["type"])
         except ValidationError as exc:
-            exc.messages = {"type": exc.messages}
-            raise exc
+            exc.messages = {METADATA_FILE_NAME: {"type": exc.messages}}
+            exceptions.append(exc)
 
         for file_name, content in self.contents.items():
-            # load all configs, and validate those a associated with
-            # this class
-            config = load_yaml(file_name, content)
-            if file_name.startswith(self.prefix):
-                self.validate_schema(config)
+            config, exc = load_yaml(file_name, content)
+            if exc:
+                exceptions.append(exc)
+
+            if config and file_name.startswith(self.prefix):
+                try:
+                    self.validate_schema(config)
+                except ValidationError as exc:
+                    exc.messages = {file_name: exc.messages}
             self._configs[file_name] = config
+
+        if exceptions:
+            exc = CommandInvalidError("Error importing model")
+            exc.add_list(exceptions)
+            raise exc

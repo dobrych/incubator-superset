@@ -128,6 +128,7 @@ class BaseSupersetModelRestApi(ModelRestApi):
         "delete": "delete",
         "distinct": "list",
         "export": "mulexport",
+        "import_": "add",
         "get": "show",
         "get_list": "list",
         "info": "list",
@@ -203,7 +204,8 @@ class BaseSupersetModelRestApi(ModelRestApi):
         for schema in self.openapi_spec_component_schemas:
             try:
                 api_spec.components.schema(
-                    schema.__name__, schema=schema,
+                    schema.__name__,
+                    schema=schema,
                 )
             except DuplicateComponentNameError:
                 pass

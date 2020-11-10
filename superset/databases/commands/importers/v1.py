@@ -19,8 +19,10 @@ import json
 from typing import Any, Dict
 
 from marshmallow import fields, Schema
+from marshmallow.exceptions import ValidationError
 from sqlalchemy.orm import Session
 
+from superset.commands.exceptions import CommandInvalidError
 from superset.commands.importers.v1 import ImportModelsCommand
 from superset.models.core import Database
 
@@ -101,4 +103,12 @@ class ImportDatabasesCommand(ImportModelsCommand):
         # also validate datasets
         for file_name, config in self._configs.items():
             if file_name.startswith(ImportDatasetsCommand.prefix):
-                ImportDatasetsCommand.validate_schema(config)
+                try:
+                    ImportDatasetsCommand.validate_schema(config)
+                except ValidationError as exc:
+                    exception = CommandInvalidError(
+                        "Error importing associated dataset"
+                    )
+                    exc.messages = {file_name: exc.messages}
+                    exception.add(exc)
+                    raise exception

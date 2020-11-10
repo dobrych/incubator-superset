@@ -18,8 +18,10 @@
 from typing import Any, Dict, Set
 
 from marshmallow import fields, Schema
+from marshmallow.exceptions import ValidationError
 from sqlalchemy.orm import Session
 
+from superset.commands.exceptions import CommandInvalidError
 from superset.commands.importers.v1 import ImportModelsCommand
 from superset.connectors.sqla.models import SqlaTable
 
@@ -135,4 +137,12 @@ class ImportDatasetsCommand(ImportModelsCommand):
         # also validate databases
         for file_name, config in self._configs.items():
             if file_name.startswith(ImportDatabasesCommand.prefix):
-                ImportDatabasesCommand.validate_schema(config)
+                try:
+                    ImportDatabasesCommand.validate_schema(config)
+                except ValidationError as exc:
+                    exception = CommandInvalidError(
+                        "Error importing associated database"
+                    )
+                    exc.messages = {file_name: exc.messages}
+                    exception.add(exc)
+                    raise exception

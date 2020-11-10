@@ -20,10 +20,10 @@ from unittest.mock import patch
 
 import pytest
 import yaml
-from marshmallow.exceptions import ValidationError
 
 from superset import db, security_manager
 from superset.commands.exceptions import CommandInvalidError
+from superset.commands.importers.exceptions import IncorrectVersionError
 from superset.connectors.sqla.models import SqlaTable
 from superset.databases.commands.exceptions import DatabaseNotFoundError
 from superset.databases.commands.export import ExportDatabasesCommand
@@ -32,71 +32,11 @@ from superset.datasets.commands.importers.v1 import ImportDatasetsCommand
 from superset.models.core import Database
 from superset.utils.core import backend, get_example_database
 from tests.base_tests import SupersetTestCase
-
-
-# example YAML files
-metadata_config = {
-    "version": "1.0.0",
-    "type": "Database",
-    "timestamp": "2020-11-04T21:27:44.423819+00:00",
-}
-database_config = {
-    "allow_csv_upload": True,
-    "allow_ctas": True,
-    "allow_cvas": True,
-    "allow_run_async": False,
-    "cache_timeout": None,
-    "database_name": "imported_database",
-    "expose_in_sqllab": True,
-    "extra": {},
-    "sqlalchemy_uri": "sqlite:///test.db",
-    "uuid": "b8a1ccd3-779d-4ab7-8ad8-9ab119d7fe89",
-    "version": "1.0.0",
-}
-dataset_config = {
-    "table_name": "imported_dataset",
-    "main_dttm_col": None,
-    "description": "This is a dataset that was exported",
-    "default_endpoint": "",
-    "offset": 66,
-    "cache_timeout": 55,
-    "schema": "",
-    "sql": "",
-    "params": None,
-    "template_params": None,
-    "filter_select_enabled": True,
-    "fetch_values_predicate": None,
-    "extra": None,
-    "metrics": [
-        {
-            "metric_name": "count",
-            "verbose_name": "",
-            "metric_type": None,
-            "expression": "count(1)",
-            "description": None,
-            "d3format": None,
-            "extra": None,
-            "warning_text": None,
-        },
-    ],
-    "columns": [
-        {
-            "column_name": "cnt",
-            "verbose_name": "Count of something",
-            "is_dttm": False,
-            "is_active": None,
-            "type": "NUMBER",
-            "groupby": False,
-            "filterable": True,
-            "expression": "",
-            "description": None,
-            "python_date_format": None,
-        },
-    ],
-    "version": "1.0.0",
-    "uuid": "10808100-158b-42c4-842e-f32b99d88dfb",
-    "database_uuid": "b8a1ccd3-779d-4ab7-8ad8-9ab119d7fe89",
-}
+from tests.fixtures.importexport import (
+    database_config,
+    dataset_config,
+    metadata_config,
+)
 
 
 class TestExportDatabasesCommand(SupersetTestCase):
@@ -468,9 +408,12 @@ class TestExportDatabasesCommand(SupersetTestCase):
             "databases/imported_database.yaml": yaml.safe_dump(database_config),
         }
         command = ImportDatabasesCommand(contents)
-        with pytest.raises(CommandInvalidError) as excinfo:
+        with pytest.raises(IncorrectVersionError) as excinfo:
             command.run()
-        assert str(excinfo.value) == 'Missing file "metadata.yaml" in contents'
+        assert str(excinfo.value) == "Error importing model"
+        assert excinfo.value.normalized_messages() == {
+            "metadata.yaml": "File is missing"
+        }
 
         # version should be 1.0.0
         contents["metadata.yaml"] = yaml.safe_dump(
@@ -481,10 +424,13 @@ class TestExportDatabasesCommand(SupersetTestCase):
             }
         )
         command = ImportDatabasesCommand(contents)
-        with pytest.raises(ValidationError) as excinfo:
+        with pytest.raises(CommandInvalidError) as excinfo:
             command.run()
-        assert excinfo.value.messages == {
-            "version": ["Must be equal to 1.0.0."],
+        assert str(excinfo.value) == "Error importing model"
+        assert excinfo.value.normalized_messages() == {
+            "metadata.yaml": {
+                "version": ["Must be equal to 1.0.0."],
+            },
         }
 
         # type should be Database
@@ -496,10 +442,13 @@ class TestExportDatabasesCommand(SupersetTestCase):
             }
         )
         command = ImportDatabasesCommand(contents)
-        with pytest.raises(ValidationError) as excinfo:
+        with pytest.raises(CommandInvalidError) as excinfo:
             command.run()
-        assert excinfo.value.messages == {
-            "type": ["Must be equal to Database."],
+        assert str(excinfo.value) == "Error importing model"
+        assert excinfo.value.normalized_messages() == {
+            "metadata.yaml": {
+                "type": ["Must be equal to Database."],
+            },
         }
 
         # must also validate datasets
@@ -508,10 +457,13 @@ class TestExportDatabasesCommand(SupersetTestCase):
         contents["metadata.yaml"] = yaml.safe_dump(metadata_config)
         contents["datasets/imported_dataset.yaml"] = yaml.safe_dump(broken_config)
         command = ImportDatabasesCommand(contents)
-        with pytest.raises(ValidationError) as excinfo:
+        with pytest.raises(CommandInvalidError) as excinfo:
             command.run()
-        assert excinfo.value.messages == {
-            "table_name": ["Missing data for required field."],
+        assert str(excinfo.value) == "Error importing associated dataset"
+        assert excinfo.value.normalized_messages() == {
+            "datasets/imported_dataset.yaml": {
+                "table_name": ["Missing data for required field."],
+            },
         }
 
     def test_import_v1_dataset(self):
@@ -624,7 +576,10 @@ class TestExportDatabasesCommand(SupersetTestCase):
         command = ImportDatasetsCommand(contents)
         with pytest.raises(CommandInvalidError) as excinfo:
             command.run()
-        assert str(excinfo.value) == 'Missing file "metadata.yaml" in contents'
+        assert str(excinfo.value) == "Error importing model"
+        assert excinfo.value.normalized_messages() == {
+            "metadata.yaml": "File is missing"
+        }
 
         # version should be 1.0.0
         contents["metadata.yaml"] = yaml.safe_dump(
@@ -635,10 +590,13 @@ class TestExportDatabasesCommand(SupersetTestCase):
             }
         )
         command = ImportDatasetsCommand(contents)
-        with pytest.raises(ValidationError) as excinfo:
+        with pytest.raises(CommandInvalidError) as excinfo:
             command.run()
-        assert excinfo.value.messages == {
-            "version": ["Must be equal to 1.0.0."],
+        assert str(excinfo.value) == "Error importing model"
+        assert excinfo.value.normalized_messages() == {
+            "metadata.yaml": {
+                "version": ["Must be equal to 1.0.0."],
+            },
         }
 
         # type should be SqlaTable (from the model)
@@ -650,10 +608,13 @@ class TestExportDatabasesCommand(SupersetTestCase):
             }
         )
         command = ImportDatasetsCommand(contents)
-        with pytest.raises(ValidationError) as excinfo:
+        with pytest.raises(CommandInvalidError) as excinfo:
             command.run()
-        assert excinfo.value.messages == {
-            "type": ["Must be equal to SqlaTable."],
+        assert str(excinfo.value) == "Error importing model"
+        assert excinfo.value.normalized_messages() == {
+            "metadata.yaml": {
+                "type": ["Must be equal to SqlaTable."],
+            },
         }
 
         # must also validate databases
@@ -664,10 +625,13 @@ class TestExportDatabasesCommand(SupersetTestCase):
         contents["metadata.yaml"] = yaml.safe_dump(dataset_metadata_config)
         contents["databases/imported_database.yaml"] = yaml.safe_dump(broken_config)
         command = ImportDatasetsCommand(contents)
-        with pytest.raises(ValidationError) as excinfo:
+        with pytest.raises(CommandInvalidError) as excinfo:
             command.run()
-        assert excinfo.value.messages == {
-            "database_name": ["Missing data for required field."],
+        assert str(excinfo.value) == "Error importing associated database"
+        assert excinfo.value.normalized_messages() == {
+            "databases/imported_database.yaml": {
+                "database_name": ["Missing data for required field."],
+            },
         }
 
     @patch("superset.datasets.commands.importers.v1.ImportDatasetsCommand.import_")
