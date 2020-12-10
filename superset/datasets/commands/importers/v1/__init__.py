@@ -20,7 +20,7 @@ from typing import Any, Dict, Set
 from marshmallow import Schema
 from sqlalchemy.orm import Session
 
-from superset.commands.importers.v1 import ImportModelsCommand
+from superset.commands.importers.v1.base import ImportModelsCommand
 from superset.databases.commands.importers.v1.utils import import_database
 from superset.databases.schemas import ImportV1DatabaseSchema
 from superset.datasets.commands.exceptions import DatasetImportError

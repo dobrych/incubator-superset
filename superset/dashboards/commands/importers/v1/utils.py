@@ -17,7 +17,7 @@
 
 import json
 import logging
-from typing import Any, Dict
+from typing import Any, Dict, Iterator
 
 from sqlalchemy.orm import Session
 
@@ -27,6 +27,17 @@ logger = logging.getLogger(__name__)
 
 
 JSON_KEYS = {"position": "position_json", "metadata": "json_metadata"}
+
+
+def find_chart_uuids(position: Dict[str, Any]) -> Iterator[str]:
+    """Find all chart UUIDs in a dashboard"""
+    for child in position.values():
+        if (
+            isinstance(child, dict)
+            and child["type"] == "CHART"
+            and "uuid" in child["meta"]
+        ):
+            yield child["meta"]["uuid"]
 
 
 def import_dashboard(

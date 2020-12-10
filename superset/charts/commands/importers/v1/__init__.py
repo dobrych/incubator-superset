@@ -24,7 +24,7 @@ from superset.charts.commands.exceptions import ChartImportError
 from superset.charts.commands.importers.v1.utils import import_chart
 from superset.charts.dao import ChartDAO
 from superset.charts.schemas import ImportV1ChartSchema
-from superset.commands.importers.v1 import ImportModelsCommand
+from superset.commands.importers.v1.base import ImportModelsCommand
 from superset.databases.commands.importers.v1.utils import import_database
 from superset.databases.schemas import ImportV1DatabaseSchema
 from superset.datasets.commands.importers.v1.utils import import_dataset

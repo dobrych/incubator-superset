@@ -104,6 +104,7 @@ def load_examples_run(
 
     from superset import examples
 
+    """
     examples.load_css_templates()
 
     print("Loading energy related dataset")
@@ -154,6 +155,10 @@ def load_examples_run(
 
     print("Loading [Tabbed dashboard]")
     examples.load_tabbed_dashboard(only_metadata)
+    """
+
+    # load examples that are stored as YAML config files
+    examples.load_from_configs()
 
 
 @with_appcontext
