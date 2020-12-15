@@ -19,16 +19,23 @@ import logging
 import time
 from copy import copy
 from datetime import datetime
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Tuple
+from uuid import uuid4
 
 from flask_babel import lazy_gettext as _
 from sqlalchemy.orm import make_transient, Session
+from werkzeug.utils import secure_filename
 
 from superset import ConnectorRegistry, db
-from superset.commands.base import BaseCommand
+from superset.commands.importers.exceptions import IncorrectVersionError
+from superset.commands.importers.v1.utils import IMPORT_VERSION
 from superset.connectors.sqla.models import SqlaTable, SqlMetric, TableColumn
+from superset.dashboards.commands.importers import v1
+from superset.databases.commands.exceptions import DatabaseNotFoundError
+from superset.datasets.commands.exceptions import DatasetNotFoundError
 from superset.datasets.commands.importers.v0 import import_dataset
 from superset.exceptions import DashboardImportException
+from superset.models.core import Database
 from superset.models.dashboard import Dashboard
 from superset.models.slice import Slice
 from superset.utils.dashboard_filter_scopes_converter import (
@@ -309,30 +316,237 @@ def import_dashboards(
     session.commit()
 
 
-class ImportDashboardsCommand(BaseCommand):
+# keys to copy when converting from v0 format to v1
+KEYS_TO_COPY = {
+    "table_name",
+    "main_dttm_col",
+    "description",
+    "default_endpoint",
+    "offset",
+    "cache_timeout",
+    "sql",
+    "filter_select_enabled",
+    "fetch_values_predicate",
+}
+
+JSON_KEYS = {"extra", "params", "template_params"}
+
+COLUMN_KEYS_TO_COPY = {
+    "column_name",
+    "verbose_name",
+    "is_dttm",
+    "is_active",
+    "type",
+    "groupby",
+    "filterable",
+    "expression",
+    "description",
+    "python_date_format",
+}
+
+METRIC_KEYS_TO_COPY = {
+    "metric_name",
+    "verbose_name",
+    "metric_type",
+    "expression",
+    "description",
+    "d3format",
+    "warning_text",
+}
+
+CHART_KEYS_TO_COPY = {
+    "slice_name",
+    "viz_type",
+    "cache_timeout",
+}
+
+
+class ImportDashboardsCommand(v1.ImportDashboardsCommand):
     """
     Import dashboard in JSON format.
 
     This is the original unversioned format used to export and import dashboards
-    in Superset.
+    in Superset. The class simply converts the old config to the format used in
+    the v1 import, and then leverages the v1 importer.
     """
 
-    def __init__(self, contents: Dict[str, str], database_id: Optional[int] = None):
-        self.contents = contents
-        self.database_id = database_id
+    def __init__(self, contents: Dict[str, str], *args: Any, **kwargs: Any):
+        super().__init__(contents, *args, **kwargs)
+        self.database_id: Optional[int] = kwargs.get("database_id")
 
-    def run(self) -> None:
-        self.validate()
+    def _convert_config(self, v0_config: Dict[str, Any]) -> Dict[str, Any]:
+        configs: Dict[str, Any] = {}
 
-        for file_name, content in self.contents.items():
-            logger.info("Importing dashboard from file %s", file_name)
-            import_dashboards(db.session, content, self.database_id)
+        # convert datasets
+        for datasource in v0_config.get("datasources", []):
+            if "__SqlaTable__" in datasource:
+                configs.update(
+                    self._convert_dataset(datasource["__SqlaTable__"], self.database_id)
+                )
+        datasets = [
+            (config["schema"], config["table_name"], config["uuid"])
+            for file_name, config in configs.items()
+            if file_name.startswith("datasets/")
+        ]
+
+        # convert charts
+        for dashboard in v0_config.get("dashboards", []):
+            for chart in dashboard["__Dashboard__"].get("slices", []):
+                configs.update(self._convert_chart(chart["__Slice__"], datasets))
+
+        # convert dashboards
+        for dashboard in v0_config.get("dashboards", []):
+            configs.update(self._convert_dashboard(dashboard["__Dashboard__"]))
+
+        return configs
+
+    @staticmethod
+    def _convert_dataset(
+        v0_config: Dict[str, Any], database_id: Optional[int]
+    ) -> Dict[str, Any]:
+        dataset_config = {key: v0_config[key] for key in KEYS_TO_COPY}
+
+        # load JSON fields
+        for key in JSON_KEYS:
+            if v0_config.get(key):
+                try:
+                    dataset_config[key] = json.loads(v0_config[key])
+                except json.decoder.JSONDecodeError:
+                    logger.info("Unable to decode `%s` field: %s", key, v0_config[key])
+
+        # load columns & metrics
+        dataset_config["columns"] = [
+            ImportDashboardsCommand._convert_column(column["__TableColumn__"])
+            for column in v0_config["columns"]
+        ]
+        dataset_config["metrics"] = [
+            ImportDashboardsCommand._convert_metric(metric["__SqlMetric__"])
+            for metric in v0_config["metrics"]
+        ]
+
+        # find database
+        if database_id:
+            database = db.session.query(Database).filter_by(id=database_id).one()
+        elif "database_name" in dataset_config["params"]:
+            database = (
+                db.session.query(Database)
+                .filter_by(database_name=dataset_config["params"]["database_name"])
+                .one()
+            )
+        elif v0_config.get("database_id"):
+            database = (
+                db.session.query(Database).filter_by(id=v0_config["database_id"]).one()
+            )
+        else:
+            raise DatabaseNotFoundError(
+                f"Could not find database for dataset `{dataset_config['table_name']}`"
+            )
+
+        # if the schema doesn't exist in the DB we assume the DB doesn't
+        # support schemas instead of creating it, since the DB has already
+        # been imported
+        if v0_config["schema"] in database.get_all_schema_names():
+            dataset_config["schema"] = v0_config["schema"]
+        else:
+            dataset_config["schema"] = None
+
+        database_slug = secure_filename(database.database_name)
+        dataset_slug = secure_filename(dataset_config["table_name"])
+        dataset_file_name = f"datasets/{database_slug}/{dataset_slug}.yaml"
+
+        # create DB config
+        database_file_name = f"databases/{database_slug}.yaml"
+        database_config = database.export_to_dict(
+            recursive=False,
+            include_parent_ref=False,
+            include_defaults=True,
+            export_uuids=True,
+        )
+        if database_config.get("extra"):
+            try:
+                database_config["extra"] = json.loads(database_config["extra"])
+            except json.decoder.JSONDecodeError:
+                logger.info(
+                    "Unable to decode `extra` field: %s", database_config["extra"]
+                )
+        database_config["version"] = IMPORT_VERSION
+
+        # add extra metadata
+        dataset_config["version"] = IMPORT_VERSION
+        dataset_config["uuid"] = str(uuid4())
+        dataset_config["database_uuid"] = str(database.uuid)
+
+        return {
+            dataset_file_name: dataset_config,
+            database_file_name: database_config,
+        }
+
+    @staticmethod
+    def _convert_column(v0_config: Dict[str, Any]) -> Dict[str, Any]:
+        return {key: v0_config[key] for key in COLUMN_KEYS_TO_COPY}
+
+    @staticmethod
+    def _convert_metric(v0_config: Dict[str, Any]) -> Dict[str, Any]:
+        metric_config = {key: v0_config[key] for key in METRIC_KEYS_TO_COPY}
+
+        if v0_config.get("extra"):
+            try:
+                metric_config["extra"] = json.loads(v0_config["extra"])
+            except json.decoder.JSONDecodeError:
+                logger.info("Unable to decode `extra` field: %s", v0_config["extra"])
+
+        return metric_config
+
+    @staticmethod
+    def _convert_chart(
+        v0_config: Dict[str, Any], datasets: Tuple[Optional[str], str, str]
+    ) -> Dict[str, Any]:
+        chart_config = {key: v0_config[key] for key in CHART_KEYS_TO_COPY}
+
+        if v0_config.get("params"):
+            try:
+                chart_config["params"] = json.loads(v0_config["params"])
+            except json.decoder.JSONDecodeError:
+                logger.info("Unable to decode `params` field: %s", v0_config["params"])
+
+        # find dataset associated with chart
+        params = chart_config["params"]
+        for schema, table_name, uuid in datasets:
+            if params["datasource_name"] == table_name and (
+                params["schema"] == schema or not schema
+            ):
+                params["schema"] = schema
+                chart_config["dataset_uuid"] = uuid
+                break
+        else:
+            raise DatasetNotFoundError(
+                f"Could not find dataset for chart `{chart_config['slice_name']}`"
+            )
+
+        # add extra metadata
+        chart_config["version"] = IMPORT_VERSION
+        chart_config["uuid"] = str(uuid4())
+
+        chart_slug = secure_filename(chart_config["slice_name"])
+        chart_file_name = f"charts/{chart_slug}.yaml"
+
+        return {chart_file_name: chart_config}
+
+    @staticmethod
+    def _convert_dashboard(v0_config: Dict[str, Any]) -> Dict[str, Any]:
+        pass
 
     def validate(self) -> None:
         # ensure all files are JSON
-        for content in self.contents.values():
+        for file_name, content in self.contents.items():
             try:
-                json.loads(content)
+                config = json.loads(content)
             except ValueError:
                 logger.exception("Invalid JSON file")
-                raise
+                raise IncorrectVersionError(f"{file_name} is not a valid JSON file")
+
+            if "dashboards" not in config:
+                raise IncorrectVersionError(f"{file_name} has no valid keys")
+
+            v1_config = self._convert_config(config)
+            self._configs.update(v1_config)

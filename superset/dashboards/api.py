@@ -700,11 +700,15 @@ class DashboardRestApi(BaseSupersetModelRestApi):
         upload = request.files.get("formData")
         if not upload:
             return self.response_400()
-        with ZipFile(upload) as bundle:
-            contents = {
-                remove_root(file_name): bundle.read(file_name).decode()
-                for file_name in bundle.namelist()
-            }
+        if upload.mimetype == "application/zip":
+            with ZipFile(upload) as bundle:
+                contents = {
+                    remove_root(file_name): bundle.read(file_name).decode()
+                    for file_name in bundle.namelist()
+                }
+        else:
+            # old format (JSON)
+            contents = {upload.filename: upload.read()}
 
         passwords = (
             json.loads(request.form["passwords"])

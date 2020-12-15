@@ -91,7 +91,9 @@ class ImportDashboardsCommand(ImportModelsCommand):
         # import related databases
         database_ids: Dict[str, int] = {}
         for file_name, config in configs.items():
-            if file_name.startswith("databases/") and config["uuid"] in database_uuids:
+            if file_name.startswith(
+                "databases/"
+            ):  # and config["uuid"] in database_uuids:
                 database = import_database(session, config, overwrite=False)
                 database_ids[str(database.uuid)] = database.id
 
@@ -100,7 +102,7 @@ class ImportDashboardsCommand(ImportModelsCommand):
         for file_name, config in configs.items():
             if (
                 file_name.startswith("datasets/")
-                and config["database_uuid"] in database_ids
+                # and config["database_uuid"] in database_ids
             ):
                 config["database_id"] = database_ids[config["database_uuid"]]
                 dataset = import_dataset(session, config, overwrite=False)
