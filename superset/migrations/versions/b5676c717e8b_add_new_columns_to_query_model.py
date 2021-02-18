@@ -38,12 +38,32 @@ class QueryLimiter(Enum):
     DROPDOWN = "DROPDOWN"
 
 
+class Query(Base):
+    __tablename__ = "query"
+
+    was_limited = Column(Boolean())
+    limiting_factor = Column(Enum(QueryLimiter))
+    limit
+    rows
+    executed_sql = 
+
+
 def upgrade():
     with op.batch_alter_table("query") as batch_op:
         batch_op.add_column(sa.Column("was_limited", sa.Boolean(), nullable=False))
         batch_op.add_column(
             sa.Column("limiting_factor", sa.Enum(QueryLimiter), nullable=False)
         )
+
+    queries = session.query(Query).all()
+    for query in queries:
+        query.was_limited = query.limit == query.rows
+        if extract_sql_from_query(query.executed_sql) == query.limit:
+            query.limiting_factor == QueryLimiter.QUERY
+        else:
+            query.limiting_factor == QueryLimiter.DROPDOWN
+        session.merge(query)
+        session.commit()
 
 
 def downgrade():
