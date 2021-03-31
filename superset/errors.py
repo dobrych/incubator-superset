@@ -40,6 +40,12 @@ class SupersetErrorType(str, Enum):
     COLUMN_DOES_NOT_EXIST_ERROR = "COLUMN_DOES_NOT_EXIST_ERROR"
     TABLE_DOES_NOT_EXIST_ERROR = "TABLE_DOES_NOT_EXIST_ERROR"
 
+    # DB connection errors
+    TEST_CONNECTION_INVALID_USERNAME_ERROR = "TEST_CONNECTION_INVALID_USERNAME_ERROR"
+    TEST_CONNECTION_INVALID_HOSTNAME_ERROR = "TEST_CONNECTION_INVALID_HOSTNAME_ERROR"
+    TEST_CONNECTION_PORT_CLOSED_ERROR = "TEST_CONNECTION_PORT_CLOSED_ERROR"
+    TEST_CONNECTION_HOST_DOWN_ERROR = "TEST_CONNECTION_HOST_DOWN_ERROR"
+
     # Viz errors
     VIZ_GET_DF_ERROR = "VIZ_GET_DF_ERROR"
     UNKNOWN_DATASOURCE_TYPE_ERROR = "UNKNOWN_DATASOURCE_TYPE_ERROR"
@@ -56,9 +62,6 @@ class SupersetErrorType(str, Enum):
 
     # Sql Lab errors
     MISSING_TEMPLATE_PARAMS_ERROR = "MISSING_TEMPLATE_PARAMS_ERROR"
-    TEST_CONNECTION_INVALID_HOSTNAME_ERROR = "TEST_CONNECTION_INVALID_HOSTNAME_ERROR"
-    TEST_CONNECTION_PORT_CLOSED_ERROR = "TEST_CONNECTION_PORT_CLOSED_ERROR"
-    TEST_CONNECTION_HOST_DOWN_ERROR = "TEST_CONNECTION_HOST_DOWN_ERROR"
 
 
 ERROR_TYPES_TO_ISSUE_CODES_MAPPING = {
@@ -132,6 +135,14 @@ ERROR_TYPES_TO_ISSUE_CODES_MAPPING = {
             "message": _(
                 "Issue 1009 - The host might be down, and can't be reached on the "
                 "provided port."
+            ),
+        },
+    ],
+    SupersetErrorType.TEST_CONNECTION_INVALID_USERNAME_ERROR: [
+        {
+            "code": 1010,
+            "message": _(
+                "Issue 1010 - The username provided when connecting to a database is not valid."
             ),
         },
     ],

@@ -51,6 +51,7 @@ from superset.datasets.commands.exceptions import get_dataset_exist_error_msg
 from superset.errors import ErrorLevel, SupersetError, SupersetErrorType
 from superset.exceptions import (
     SupersetErrorException,
+    SupersetErrorsException,
     SupersetException,
     SupersetSecurityException,
 )
@@ -190,6 +191,9 @@ def handle_api_exception(
         except SupersetErrorException as ex:
             logger.warning(ex)
             return json_errors_response(errors=[ex.error], status=ex.status)
+        except SupersetErrorsException as ex:
+            logger.warning(ex)
+            return json_errors_response(errors=ex.errors, status=ex.status)
         except SupersetException as ex:
             logger.exception(ex)
             return json_error_response(

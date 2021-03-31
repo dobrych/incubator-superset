@@ -69,6 +69,7 @@ from superset.extensions import security_manager
 from superset.models.core import Database
 from superset.typing import FlaskResponse
 from superset.utils.core import error_msg_from_exception
+from superset.views.base import handle_api_exception
 from superset.views.base_api import BaseSupersetModelRestApi, statsd_metrics
 
 logger = logging.getLogger(__name__)
@@ -565,6 +566,7 @@ class DatabaseRestApi(BaseSupersetModelRestApi):
         f".test_connection",
         log_to_statsd=False,
     )
+    @handle_api_exception
     def test_connection(  # pylint: disable=too-many-return-statements
         self,
     ) -> FlaskResponse:
@@ -604,13 +606,8 @@ class DatabaseRestApi(BaseSupersetModelRestApi):
         # This validates custom Schema with custom validations
         except ValidationError as error:
             return self.response_400(message=error.messages)
-        try:
-            TestConnectionDatabaseCommand(g.user, item).run()
-            return self.response(200, message="OK")
-        except DatabaseTestConnectionFailedError as ex:
-            return self.response_422(message=str(ex))
-        except SupersetErrorException as ex:
-            return self.response(ex.status, message=ex.error.message)
+        TestConnectionDatabaseCommand(g.user, item).run()
+        return self.response(200, message="OK")
 
     @expose("/<int:pk>/related_objects/", methods=["GET"])
     @protect()

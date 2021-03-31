@@ -31,12 +31,14 @@ from typing import (
     Union,
 )
 
+from flask_babel import gettext as __
 from pytz import _FixedOffset  # type: ignore
 from sqlalchemy.dialects.postgresql import ARRAY, DOUBLE_PRECISION, ENUM, JSON
 from sqlalchemy.dialects.postgresql.base import PGInspector
 from sqlalchemy.types import String, TypeEngine
 
 from superset.db_engine_specs.base import BaseEngineSpec
+from superset.errors import ErrorLevel, SupersetError, SupersetErrorType
 from superset.exceptions import SupersetException
 from superset.utils import core as utils
 from superset.utils.core import ColumnSpec, GenericDataType
@@ -69,6 +71,39 @@ class PostgresBaseEngineSpec(BaseEngineSpec):
         "P1M": "DATE_TRUNC('month', {col})",
         "P0.25Y": "DATE_TRUNC('quarter', {col})",
         "P1Y": "DATE_TRUNC('year', {col})",
+    }
+
+    custom_errors: Dict[str, Tuple[str, SupersetErrorType]] = {
+        'role "(?P<username>.*?)" does not exist': (
+            __('The username "%(username)s" does not exist.'),
+            SupersetErrorType.TEST_CONNECTION_INVALID_USERNAME_ERROR,
+        ),
+        (
+            'could not translate host name "(?P<hostname>.*?)" to address: '
+            "nodename nor servname provided, or not known"
+        ): (
+            __('The hostname "%(hostname)s" cannot be resolved.'),
+            SupersetErrorType.TEST_CONNECTION_INVALID_HOSTNAME_ERROR,
+        ),
+        (
+            r"could not connect to server: Connection refused\n\tIs the server "
+            r'running on host "(?P<hostname>.*?)" (\(.*?\) )?and accepting\n\tTCP/IP '
+            r"connections on port (?P<port>.*?)\?"
+        ): (
+            __("Port %(port)s on hostname %(hostname)s refused the connection."),
+            SupersetErrorType.TEST_CONNECTION_PORT_CLOSED_ERROR,
+        ),
+        (
+            r"could not connect to server: Host is down\n\tIs the server running on "
+            r'host "(?P<hostname>.*?)" (\(.*?\) )?and accepting\n\tTCP/IP '
+            r"connections on port (?P<port>.*?)\?"
+        ): (
+            __(
+                "The host %(hostname)s might be down, and can't be "
+                "reached on port %(port)s"
+            ),
+            SupersetErrorType.TEST_CONNECTION_HOST_DOWN_ERROR,
+        ),
     }
 
     @classmethod
