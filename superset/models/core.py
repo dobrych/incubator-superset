@@ -48,7 +48,7 @@ from sqlalchemy.engine.reflection import Inspector
 from sqlalchemy.engine.url import make_url, URL
 from sqlalchemy.exc import ArgumentError
 from sqlalchemy.ext.hybrid import hybrid_property
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import backref, relationship
 from sqlalchemy.pool import NullPool
 from sqlalchemy.schema import UniqueConstraint
 from sqlalchemy.sql import expression, Select
@@ -277,7 +277,9 @@ class Database(
         self.sqlalchemy_uri = str(conn)  # hides the password
 
     def get_effective_user(
-        self, object_url: URL, user_name: Optional[str] = None,
+        self,
+        object_url: URL,
+        user_name: Optional[str] = None,
     ) -> Optional[str]:
         """
         Get the effective user, especially during impersonation.
@@ -695,6 +697,38 @@ class Database(
 
 sqla.event.listen(Database, "after_insert", security_manager.set_perm)
 sqla.event.listen(Database, "after_update", security_manager.set_perm)
+
+
+dimension_user = Table(
+    "dimension_user",
+    metadata,
+    Column("id", Integer, primary_key=True),
+    Column("user_id", Integer, ForeignKey("ab_user.id")),
+    Column("dimension_id", Integer, ForeignKey("dimensions.id")),
+)
+
+
+class Dimension(Model, AuditMixinNullable, ImportExportMixin):
+
+    __tablename__ = "dimensions"
+
+    id = Column(Integer, primary_key=True)
+    name = Column(String(250), unique=True, nullable=False)
+
+    # XXX primary key? partition?
+
+    database_id = Column(Integer, ForeignKey("dbs.id"), nullable=False)
+    database: Database = relationship(
+        "Database",
+        backref=backref(__tablename__, cascade="all, delete-orphan"),
+        foreign_keys=[database_id],
+    )
+    catalog = Column(String(250))
+    schema = Column(String(250))
+    table_name = Column(String(250), nullable=False)
+
+    owner_class = security_manager.user_model
+    owners = relationship(owner_class, secondary=dimension_user, backref="dimensions")
 
 
 class Log(Model):  # pylint: disable=too-few-public-methods

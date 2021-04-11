@@ -169,6 +169,8 @@ class TableColumn(Model, BaseColumn):
     is_dttm = Column(Boolean, default=False)
     expression = Column(Text)
     python_date_format = Column(String(255))
+    dimension_id = Column(Integer, ForeignKey("dimensions.id"))
+    dimension = relationship("Dimension")
 
     export_fields = [
         "table_id",
@@ -934,7 +936,10 @@ class SqlaTable(  # pylint: disable=too-many-public-methods,too-many-instance-at
             return [or_(*clauses) for clauses in filters_grouped.values()]
         except TemplateError as ex:
             raise QueryObjectValidationError(
-                _("Error in jinja expression in RLS filters: %(msg)s", msg=ex.message,)
+                _(
+                    "Error in jinja expression in RLS filters: %(msg)s",
+                    msg=ex.message,
+                )
             )
 
     def get_sqla_query(  # pylint: disable=too-many-arguments,too-many-locals,too-many-branches,too-many-statements
