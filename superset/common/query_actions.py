@@ -110,6 +110,7 @@ def _get_full(
     applied_time_columns, rejected_time_columns = get_time_filter_status(
         datasource, query_obj.applied_time_extras
     )
+    # XXX: include dimensions
     payload["applied_filters"] = [
         {"column": col} for col in filter_columns if col in columns
     ] + applied_time_columns

@@ -171,11 +171,7 @@ class SupersetShillelaghAdapter(Adapter):
         return tuple(parts[1:])  # type: ignore
 
     def __init__(
-        self,
-        database: str,
-        catalog: Optional[str],
-        schema: Optional[str],
-        table: str,
+        self, database: str, catalog: Optional[str], schema: Optional[str], table: str,
     ):
         self.database = database
         self.catalog = catalog
@@ -209,10 +205,7 @@ class SupersetShillelaghAdapter(Adapter):
         metadata = MetaData()
         try:
             self._table = Table(
-                self.table,
-                metadata,
-                autoload=True,
-                autoload_with=self.engine,
+                self.table, metadata, autoload=True, autoload_with=self.engine,
             )
         except NoSuchTableError:
             raise ProgrammingError(f"Table does not exist: {self.table}")

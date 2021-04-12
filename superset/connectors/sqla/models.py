@@ -936,12 +936,10 @@ class SqlaTable(  # pylint: disable=too-many-public-methods,too-many-instance-at
             return [or_(*clauses) for clauses in filters_grouped.values()]
         except TemplateError as ex:
             raise QueryObjectValidationError(
-                _(
-                    "Error in jinja expression in RLS filters: %(msg)s",
-                    msg=ex.message,
-                )
+                _("Error in jinja expression in RLS filters: %(msg)s", msg=ex.message,)
             )
 
+    # XXX: do join if using dimension
     def get_sqla_query(  # pylint: disable=too-many-arguments,too-many-locals,too-many-branches,too-many-statements
         self,
         metrics: Optional[List[Metric]] = None,
@@ -977,6 +975,7 @@ class SqlaTable(  # pylint: disable=too-many-public-methods,too-many-instance-at
             "filter": filter,
             "columns": [col.column_name for col in self.columns],
         }
+        print("\n\nBETO", groupby, columns)
         template_kwargs.update(self.template_params_dict)
         extra_cache_keys: List[Any] = []
         template_kwargs["extra_cache_keys"] = extra_cache_keys

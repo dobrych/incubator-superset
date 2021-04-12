@@ -344,6 +344,7 @@ class QueryContext:
 
         if query_obj and not is_loaded:
             try:
+                # XXX: check dimensions
                 invalid_columns = [
                     col
                     for col in query_obj.columns
