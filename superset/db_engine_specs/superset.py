@@ -17,7 +17,19 @@
 import datetime
 import operator
 import urllib.parse
-from typing import Any, Dict, Iterator, List, Optional, Tuple, Type
+from functools import wraps
+from typing import (
+    Any,
+    Callable,
+    cast,
+    Dict,
+    Iterator,
+    List,
+    Optional,
+    Tuple,
+    Type,
+    TypeVar,
+)
 
 from flask import g
 from flask_login import current_user
@@ -38,8 +50,10 @@ from shillelagh.fields import (
 )
 from shillelagh.filters import Equal, Filter, Range
 from shillelagh.types import RequestedOrder, Row
-from sqlalchemy import MetaData, Table
+from sqlalchemy import INTEGER, MetaData, Table
 from sqlalchemy.engine.url import URL
+from sqlalchemy.exc import NoSuchTableError
+from sqlalchemy.inspection import inspect
 from sqlalchemy.pool.base import _ConnectionFairy
 from sqlalchemy.sql import Select, select
 
@@ -100,13 +114,30 @@ class SupersetAPSWDialect(APSWDialect):
         return []
 
 
+F = TypeVar("F", bound=Callable[..., Any])
+
+
+def requires_rowid(method: F) -> F:
+    @wraps(method)
+    def wrapper(self: "SupersetShillelaghAdapter", *args: Any, **kwargs: Any) -> Any:
+        # pylint: disable=protected-access
+        if not self._rowid:
+            raise ProgrammingError(
+                "Can only modify data in a table with a single, integer, primary key"
+            )
+        return method(self, *args, **kwargs)
+
+    return cast(F, wrapper)
+
+
 class SupersetShillelaghAdapter(Adapter):
 
     """
     A shillelagh adapter for Superset tables.
 
     Shillelagh adapters are responsible for fetching data from a given resource,
-    allowing it to be represented as a virtual table in SQLite.
+    allowing it to be represented as a virtual table in SQLite. This one works
+    as a proxy to Superset tables.
     """
 
     safe = True
@@ -147,6 +178,7 @@ class SupersetShillelaghAdapter(Adapter):
         self.schema = schema
         self.table = table
 
+        self._rowid: Optional[str] = None
         self._set_columns()
 
     @classmethod
@@ -158,8 +190,10 @@ class SupersetShillelaghAdapter(Adapter):
         from superset.models.core import Database
 
         database = (
-            db.session.query(Database).filter_by(database_name=self.database).one()
+            db.session.query(Database).filter_by(database_name=self.database).first()
         )
+        if database is None:
+            raise ProgrammingError(f"Database not found: {self.database}")
 
         # verify permissions
         g.user = current_user
@@ -169,9 +203,20 @@ class SupersetShillelaghAdapter(Adapter):
         # fetch column names and types
         self.engine = database.get_sqla_engine()
         metadata = MetaData()
-        self._table = Table(
-            self.table, metadata, autoload=True, autoload_with=self.engine,
-        )
+        try:
+            self._table = Table(
+                self.table, metadata, autoload=True, autoload_with=self.engine,
+            )
+        except NoSuchTableError:
+            raise ProgrammingError(f"Table does not exist: {self.table}")
+
+        # find row ID column; we can only insert data into a table with a single
+        # integer primary key
+        primary_keys = [
+            column for column in list(self._table.primary_key) if column.primary_key
+        ]
+        if len(primary_keys) == 1 and primary_keys[0].type.python_type == int:
+            self._rowid = primary_keys[0].name
 
         self.columns = {
             column.name: self.get_field(column.type.python_type)
@@ -217,5 +262,42 @@ class SupersetShillelaghAdapter(Adapter):
         rows = connection.execute(query)
         for i, row in enumerate(rows):
             data = dict(zip(self.columns, row))
-            data["rowid"] = i
+            data["rowid"] = data[self._rowid] if self._rowid else i
             yield data
+
+    @requires_rowid
+    def insert_row(self, row: Row) -> int:
+        row_id: Optional[int] = row.pop("rowid")
+        if row_id:
+            if row.get(self._rowid) != row_id:
+                raise ProgrammingError(f"Invalid rowid specified: {row_id}")
+            row[self._rowid] = row_id
+
+        # insert row
+        query = self._table.insert().values(**row)
+        connection = self.engine.connect()
+        result = connection.execute(query)
+
+        return result.inserted_primary_key[0]
+
+    @requires_rowid
+    def delete_row(self, row_id: int) -> None:
+        query = self._table.delete().where(self._table.c[self._rowid] == row_id)
+        connection = self.engine.connect()
+        connection.execute(query)
+
+    @requires_rowid
+    def update_row(self, row_id: int, row: Row) -> None:
+        new_row_id: Optional[int] = row.pop("rowid")
+        if new_row_id:
+            if row.get(self._rowid) != new_row_id:
+                raise ProgrammingError(f"Invalid rowid specified: {new_row_id}")
+            row[self._rowid] = new_row_id
+
+        query = (
+            self._table.update()
+            .where(self._table.c[self._rowid] == row_id)
+            .values(**row)
+        )
+        connection = self.engine.connect()
+        connection.execute(query)
