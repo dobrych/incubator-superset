@@ -113,7 +113,7 @@ setup(
         "PyJWT>=2.0.0, <2.3.0",
         "redis",
         "selenium>=3.141.0",
-        "shillelagh>=0.4.1,<0.5",
+        "shillelagh>=0.4.3,<0.5",
         "simplejson>=3.15.0",
         "slackclient==2.5.0",  # PINNED! slack changes file upload api in the future versions
         "sqlalchemy>=1.3.16, <1.4, !=1.3.21",
