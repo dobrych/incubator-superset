@@ -32,7 +32,6 @@ from typing import (
 )
 
 from flask import g
-from flask_login import current_user
 from shillelagh.adapters.base import Adapter
 from shillelagh.backends.apsw.dialect import APSWDialect
 from shillelagh.exceptions import ProgrammingError
@@ -71,6 +70,13 @@ class SupersetEngineSpec(SqliteEngineSpec):
     engine = "superset"
     engine_name = "Superset"
 
+    @classmethod
+    def modify_url_for_impersonation(
+        cls, url: URL, impersonate_user: bool, username: Optional[str]
+    ) -> None:
+        if impersonate_user:
+            url.username = username
+
 
 # pylint: disable=abstract-method
 class SupersetAPSWDialect(APSWDialect):
@@ -103,7 +109,7 @@ class SupersetAPSWDialect(APSWDialect):
             {
                 "path": ":memory:",
                 "adapters": ["superset"],
-                "adapter_args": {},
+                "adapter_args": {"supersetshillelaghadapter": (url.username,)},
                 "safe": True,
                 "isolation_level": self.isolation_level,
             },
@@ -186,12 +192,18 @@ class SupersetShillelaghAdapter(Adapter):
         return tuple(parts[1:])  # type: ignore
 
     def __init__(
-        self, database: str, catalog: Optional[str], schema: Optional[str], table: str,
+        self,
+        database: str,
+        catalog: Optional[str],
+        schema: Optional[str],
+        table: str,
+        username: str,
     ):
         self.database = database
         self.catalog = catalog
         self.schema = schema
         self.table = table
+        self.username = username
 
         self._rowid: Optional[str] = None
         self._allow_dml: bool = False
@@ -214,7 +226,7 @@ class SupersetShillelaghAdapter(Adapter):
 
         # verify permissions
         # set user since the adapter runs in a different thread
-        g.user = current_user
+        g.user = security_manager.get_user_by_username(self.username)
         table = sql_parse.Table(self.table, self.schema, self.catalog)
         security_manager.raise_for_access(database=database, table=table)
 
