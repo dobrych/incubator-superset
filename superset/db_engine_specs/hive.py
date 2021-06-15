@@ -331,7 +331,10 @@ class HiveEngineSpec(PrestoEngineSpec):
                 cursor.cancel()
                 break
 
-            log = cursor.fetch_logs() or ""
+            try:
+                log = cursor.fetch_logs() or ""
+            except Exception:  # pylint: disable=broad-except
+                log = ""
             if log:
                 log_lines = log.splitlines()
                 progress = cls.progress(log_lines)
