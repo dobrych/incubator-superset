@@ -35,6 +35,7 @@ interface Column {
   name: string;
   keys?: { type: ColumnKeyTypeType }[];
   type: string;
+  extraMetadata: Record<string, string>;
 }
 
 interface Table {
@@ -60,6 +61,10 @@ interface TableElementProps {
     removeTable: (table: Table) => void;
   };
 }
+
+const StyledCard = styled(Card)`
+  margin-bottom: ${({ theme }) => theme.gridUnit * 2}px;
+`;
 
 const StyledSpan = styled.span`
   color: ${({ theme }) => theme.colors.primary.dark1};
@@ -123,8 +128,8 @@ const TableElement = ({ table, actions, ...props }: TableElementProps) => {
       );
     }
 
-    if (table.metadata) {
-      metadata = Object.entries(table.metadata).map(([key, value]) => (
+    if (table.metadata?.table) {
+      metadata = Object.entries(table.metadata?.table).map(([key, value]) => (
         <div>
           <small>
             <strong>{key}:</strong> {value}
@@ -139,10 +144,10 @@ const TableElement = ({ table, actions, ...props }: TableElementProps) => {
     }
 
     return (
-      <Card size="small">
+      <StyledCard size="small">
         {partitions}
         {metadata}
-      </Card>
+      </StyledCard>
     );
   };
 
@@ -260,6 +265,11 @@ const TableElement = ({ table, actions, ...props }: TableElementProps) => {
       }
     }
 
+    const enrichedCols = cols?.map(col => ({
+      ...col,
+      extraMetadata: table.metadata?.columns[col.name] || {},
+    }));
+
     const metadata = (
       <div
         onMouseEnter={() => setHover(true)}
@@ -268,7 +278,7 @@ const TableElement = ({ table, actions, ...props }: TableElementProps) => {
       >
         {renderWell()}
         <div>
-          {cols?.map(col => (
+          {enrichedCols?.map(col => (
             <ColumnElement column={col} key={col.name} />
           ))}
         </div>

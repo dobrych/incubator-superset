@@ -2088,9 +2088,20 @@ class Superset(BaseSupersetView):  # pylint: disable=too-many-public-methods
         parsed_schema = utils.parse_js_uri_path_item(schema, eval_undefined=True)
         table_name = utils.parse_js_uri_path_item(table_name)  # type: ignore
         mydb = db.session.query(Database).filter_by(id=database_id).one()
+
         payload = mydb.db_engine_spec.extra_table_metadata(
             mydb, table_name, parsed_schema
         )
+
+        metadata_fetcher = config["TABLE_METADATA_FETCHER"]
+        if metadata_fetcher:
+            payload.setdefault("metadata", {})
+            payload["metadata"].update(
+                metadata_fetcher.get_metadata(
+                    database_id=mydb.id, catalog=None, schema=schema, table=table_name
+                )
+            )
+
         return json_success(json.dumps(payload))
 
     @has_access

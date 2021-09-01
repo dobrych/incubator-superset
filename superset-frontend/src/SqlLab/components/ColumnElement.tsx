@@ -22,6 +22,7 @@ import { ClassNames } from '@emotion/react';
 import { styled, useTheme } from '@superset-ui/core';
 
 import { Tooltip } from 'src/components/Tooltip';
+import { Tree } from 'src/common/components';
 
 const propTypes = {
   column: PropTypes.object.isRequired,
@@ -70,6 +71,10 @@ const tooltipTitleMap = {
   index: 'Index',
 };
 
+const StatValue = styled.span`
+  margin-left: ${({ theme }) => theme.gridUnit * 2}px;
+`;
+
 export type ColumnKeyTypeType = keyof typeof tooltipTitleMap;
 
 interface ColumnElementProps {
@@ -77,6 +82,7 @@ interface ColumnElementProps {
     name: string;
     keys?: { type: ColumnKeyTypeType }[];
     type: string;
+    extraMetadata: Record<string, string>;
   };
 }
 
@@ -104,16 +110,34 @@ export default function ColumnElement({ column }: ColumnElementProps) {
       </span>
     ));
   }
-  return (
-    <div className="clearfix table-column">
-      <div className="pull-left m-l-10 col-name">
-        {columnName}
-        {icons}
-      </div>
-      <div className="pull-right text-muted">
-        <small> {column.type}</small>
-      </div>
-    </div>
-  );
+  const treeData = [
+    {
+      title: (
+        <div>
+          <span className="col-name">
+            {columnName}
+            {icons}
+          </span>
+          <StatValue className="text-muted">
+            <small>{column.type}</small>
+          </StatValue>
+        </div>
+      ),
+      key: column.name,
+      children: Object.entries(column.extraMetadata).map(([key, value]) => ({
+        title: (
+          <div>
+            <span className="col-name">{key}</span>
+            <StatValue className="text-muted">
+              <small>{value}</small>
+            </StatValue>
+          </div>
+        ),
+        key,
+        children: [],
+      })),
+    },
+  ];
+  return <Tree treeData={treeData} />;
 }
 ColumnElement.propTypes = propTypes;

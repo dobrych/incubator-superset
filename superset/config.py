@@ -51,6 +51,7 @@ logger = logging.getLogger(__name__)
 if TYPE_CHECKING:
     from flask_appbuilder.security.sqla import models
     from superset.connectors.sqla.models import SqlaTable
+    from superset.integrations.data_portal.base import TableMetadataFetcher
     from superset.models.core import Database
 
 # Realtime stats logger, a StatsD implementation exists
@@ -676,6 +677,9 @@ MAX_TABLE_NAMES = 3000
 # Adds a warning message on sqllab save query and schedule query modals.
 SQLLAB_SAVE_WARNING_MESSAGE = None
 SQLLAB_SCHEDULE_WARNING_MESSAGE = None
+
+# Integrates SQL Lab with a data portal to show external table metadata.
+TABLE_METADATA_FETCHER: Optional["TableMetadataFetcher"] = None
 
 
 # Default celery config is to use SQLA as a broker, in a production setting

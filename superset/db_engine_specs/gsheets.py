@@ -99,7 +99,7 @@ class GSheetsEngineSpec(SqliteEngineSpec):
         except Exception:  # pylint: disable=broad-except
             metadata = {}
 
-        return {"metadata": metadata["extra"]}
+        return {"metadata": {"table": {metadata["extra"]}}}
 
     @classmethod
     def build_sqlalchemy_uri(
