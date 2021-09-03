@@ -82,6 +82,7 @@ export type DatabaseObject = {
     allows_virtual_table_explore?: boolean; // in SQL Lab
     schemas_allowed_for_csv_upload?: string[]; // in Security
     cancel_query_on_windows_unload?: boolean; // in Performance
+    collect_metadata?: boolean; // in SQL Lab
 
     version?: string;
     cost_estimate_enabled?: boolean; // in SQL Lab

@@ -20,8 +20,11 @@ import React, { ChangeEvent, EventHandler } from 'react';
 import cx from 'classnames';
 import { t, SupersetTheme } from '@superset-ui/core';
 import InfoTooltip from 'src/components/InfoTooltip';
-import IndeterminateCheckbox from 'src/components/IndeterminateCheckbox';
 import Collapse from 'src/components/Collapse';
+import Database from 'src/types/Database';
+import IndeterminateCheckbox from 'src/components/IndeterminateCheckbox';
+import Select from 'src/components/Select';
+import { useApiV1Resource } from 'src/common/hooks/apiResources/apiResources';
 import {
   StyledInputContainer,
   StyledJsonEditor,
@@ -30,6 +33,15 @@ import {
   no_margin_bottom,
 } from './styles';
 import { DatabaseObject } from '../types';
+
+const STATISTICS = [
+  { value: 'min', label: 'Minimum value' },
+  { value: 'max', label: 'Maximum value' },
+  { value: 'mean', label: 'Average value' },
+  { value: 'stddev', label: 'Standard deviation' },
+  { value: 'cardinality', label: 'Cardinality' },
+  { value: 'nulls', label: 'Number of null values' },
+];
 
 const ExtraOptions = ({
   db,
@@ -48,6 +60,11 @@ const ExtraOptions = ({
 }) => {
   const expandableModalIsOpen = !!db?.expose_in_sqllab;
   const createAsOpen = !!(db?.allow_ctas || db?.allow_cvas);
+
+  const schemasPayload = useApiV1Resource<Database>(
+    `/api/v1/database/${db?.id}/schemas/`,
+  );
+  const schemas = schemasPayload.result || [];
 
   return (
     <Collapse
@@ -182,7 +199,7 @@ const ExtraOptions = ({
                 />
               </div>
             </StyledInputContainer>
-            <StyledInputContainer>
+            <StyledInputContainer css={no_margin_bottom}>
               <div className="input-container">
                 <IndeterminateCheckbox
                   id="allows_virtual_table_explore"
@@ -197,6 +214,49 @@ const ExtraOptions = ({
                   )}
                 />
               </div>
+            </StyledInputContainer>
+            <StyledInputContainer>
+              <div className="input-container">
+                <IndeterminateCheckbox
+                  id="collect_metadata"
+                  indeterminate={false}
+                  checked={!!db?.extra_json?.collect_metadata}
+                  onChange={onExtraInputChange}
+                  labelText={t('Compute statistics on table columns')}
+                />
+                <InfoTooltip
+                  tooltip={t(
+                    'When enabled, daily queries will run to compute column statistics.',
+                  )}
+                />
+              </div>
+              <StyledInputContainer
+                className={cx('expandable', {
+                  open: !!db?.extra_json?.collect_metadata,
+                })}
+              >
+                <div className="control-label">{t('Schemas')}</div>
+                <Select
+                  allowNewOptions={false}
+                  mode="multiple"
+                  options={schemas.map(schema => ({
+                    value: schema,
+                    label: schema,
+                  }))}
+                />
+              </StyledInputContainer>
+              <StyledInputContainer
+                className={cx('expandable', {
+                  open: !!db?.extra_json?.collect_metadata,
+                })}
+              >
+                <div className="control-label">{t('Statistics')}</div>
+                <Select
+                  allowNewOptions={false}
+                  mode="multiple"
+                  options={STATISTICS}
+                />
+              </StyledInputContainer>
             </StyledInputContainer>
           </StyledExpandableForm>
         </StyledInputContainer>

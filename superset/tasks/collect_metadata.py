@@ -89,7 +89,13 @@ def get_metadata(
     else:
         schema, name = None, table_path
 
-    table = Table(name, metadata, schema=schema, autoload=True, autoload_with=engine,)
+    table = Table(
+        name,
+        metadata,
+        schema=schema,
+        autoload=True,
+        autoload_with=engine,
+    )
 
     aggregations = []
     for column in table.columns:
