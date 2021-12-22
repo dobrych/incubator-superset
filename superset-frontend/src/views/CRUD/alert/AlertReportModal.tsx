@@ -513,7 +513,7 @@ const AlertReportModal: FunctionComponent<AlertReportModalProps> = ({
     const data: any = {
       ...currentAlert,
       type: isReport ? 'Report' : 'Alert',
-      force_screenshot: isReport ? 'false' : 'true',
+      force_screenshot: contentType === 'chart' && !isReport ? 'true' : 'false',
       validator_type: conditionNotNull ? 'not null' : 'operator',
       validator_config_json: conditionNotNull
         ? {}
