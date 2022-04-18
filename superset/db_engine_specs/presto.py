@@ -33,7 +33,12 @@ from flask_babel import gettext as __, lazy_gettext as _
 from sqlalchemy import Column, literal_column, types
 from sqlalchemy.engine.base import Engine
 from sqlalchemy.engine.reflection import Inspector
-from sqlalchemy.engine.result import RowProxy
+
+try:
+    from sqlalchemy.engine.result import RowProxy
+except ImportError:
+    # sqlalchemy 1.4
+    from sqlalchemy.engine.result import Row as RowProxy
 from sqlalchemy.engine.url import URL
 from sqlalchemy.orm import Session
 from sqlalchemy.sql.expression import ColumnClause, Select

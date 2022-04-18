@@ -55,7 +55,7 @@ from sqlalchemy.sql import expression, Select
 
 from superset import app, db_engine_specs, is_feature_enabled
 from superset.databases.utils import make_url_safe
-from superset.db_engine_specs.base import TimeGrain
+from superset.db_engine_specs.base import MetricType, TimeGrain
 from superset.extensions import cache_manager, encrypted_field_factory, security_manager
 from superset.models.helpers import AuditMixinNullable, ImportExportMixin
 from superset.models.tags import FavStarUpdater
@@ -319,7 +319,7 @@ class Database(
         if conn.password != PASSWORD_MASK and not custom_password_store:
             # do not over-write the password with the password mask
             self.password = conn.password
-        conn.password = PASSWORD_MASK if conn.password else None
+        conn.set(password=PASSWORD_MASK if conn.password else None)
         self.sqlalchemy_uri = str(conn)  # hides the password
 
     def get_effective_user(
@@ -687,6 +687,11 @@ class Database(
     ) -> List[Dict[str, Any]]:
         return self.db_engine_spec.get_columns(self.inspector, table_name, schema)
 
+    def get_metrics(
+        self, table_name: str, schema: Optional[str] = None
+    ) -> List[MetricType]:
+        return self.db_engine_spec.get_metrics(self, self.inspector, table_name, schema)
+
     def get_indexes(
         self, table_name: str, schema: Optional[str] = None
     ) -> List[Dict[str, Any]]:
@@ -730,9 +735,9 @@ class Database(
             # (so users see 500 less often)
             return "dialect://invalid_uri"
         if custom_password_store:
-            conn.password = custom_password_store(conn)
+            conn.set(password=custom_password_store(conn))
         else:
-            conn.password = self.password
+            conn.set(password=self.password)
         return str(conn)
 
     @property

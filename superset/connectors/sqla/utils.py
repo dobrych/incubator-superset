@@ -82,7 +82,8 @@ def get_physical_table_metadata(
                 )
         # Broad exception catch, because there are multiple possible exceptions
         # from different drivers that fall outside CompileError
-        except Exception:  # pylint: disable=broad-except
+        except Exception as ex:  # pylint: disable=broad-except
+            print(ex)
             col.update(
                 {
                     "type": "UNKNOWN",

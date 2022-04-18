@@ -152,6 +152,21 @@ class LimitMethod:  # pylint: disable=too-few-public-methods
     FORCE_LIMIT = "force_limit"
 
 
+class MetricType(TypedDict, total=False):
+    """
+    Type for metrics return by `get_metrics`.
+    """
+
+    metric_name: str
+    expression: str
+    verbose_name: Optional[str]
+    metric_type: Optional[str]
+    description: Optional[str]
+    d3format: Optional[str]
+    warning_text: Optional[str]
+    extra: Optional[str]
+
+
 class BaseEngineSpec:  # pylint: disable=too-many-public-methods
     """Abstract class for database engine specific configurations
 
@@ -1044,6 +1059,20 @@ class BaseEngineSpec:  # pylint: disable=too-many-public-methods
         """
         return inspector.get_columns(table_name, schema)
 
+    # pylint: disable=unused-argument
+    @classmethod
+    def get_metrics(
+        cls,
+        database: "Database",
+        inspector: Inspector,
+        table_name: str,
+        schema: Optional[str],
+    ) -> List[MetricType]:
+        """
+        Get all metrics from a given schema and table.
+        """
+        return []
+
     @classmethod
     def where_latest_partition(  # pylint: disable=too-many-arguments,unused-argument
         cls,
@@ -1557,7 +1586,7 @@ class BasicParametersSchema(Schema):
     port = fields.Integer(
         required=True,
         description=__("Database port"),
-        validate=Range(min=0, max=2**16, max_inclusive=False),
+        validate=Range(min=0, max=2 ** 16, max_inclusive=False),
     )
     database = fields.String(required=True, description=__("Database name"))
     query = fields.Dict(
@@ -1707,7 +1736,7 @@ class BasicParametersMixin:
                     extra={"invalid": ["port"]},
                 ),
             )
-        if not (isinstance(port, int) and 0 <= port < 2**16):
+        if not (isinstance(port, int) and 0 <= port < 2 ** 16):
             errors.append(
                 SupersetError(
                     message=(

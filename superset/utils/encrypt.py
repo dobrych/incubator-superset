@@ -20,7 +20,13 @@ from typing import Any, Dict, List, Optional
 
 from flask import Flask
 from sqlalchemy import text, TypeDecorator
-from sqlalchemy.engine import Connection, Dialect, RowProxy
+from sqlalchemy.engine import Connection, Dialect
+
+try:
+    from sqlalchemy.engine.result import RowProxy
+except ImportError:
+    # sqlalchemy 1.4
+    from sqlalchemy.engine.result import Row as RowProxy
 from sqlalchemy_utils import EncryptedType
 
 logger = logging.getLogger(__name__)
