@@ -188,8 +188,7 @@ class SupersetShillelaghAdapter(Adapter):
         An URL for a table has the format superset.database[[.catalog].schema].table,
         eg, `superset.examples.birth_names`.
         """
-        parsed = urllib.parse.urlparse(uri)
-        parts = parsed.path.split(".")
+        parts = [urllib.parse.unquote(part) for part in uri.split(".")]
         return 3 <= len(parts) <= 5 and parts[0] == "superset"
 
     @staticmethod
@@ -203,8 +202,7 @@ class SupersetShillelaghAdapter(Adapter):
             ('examples', None, None, 'birth_names')
 
         """
-        parsed = urllib.parse.urlparse(uri)
-        parts = parsed.path.split(".")
+        parts = [urllib.parse.unquote(part) for part in uri.split(".")]
         if len(parts) == 3:
             return parts[1], None, None, parts[2]
         if len(parts) == 4:
