@@ -31,9 +31,8 @@ from typing import (
     TypeVar,
 )
 
-from flask import g
 from shillelagh.adapters.base import Adapter
-from shillelagh.backends.apsw.dialect import APSWDialect
+from shillelagh.backends.apsw.dialects.base import APSWDialect
 from shillelagh.exceptions import ProgrammingError
 from shillelagh.fields import (
     Blob,
@@ -48,7 +47,7 @@ from shillelagh.fields import (
     Time,
 )
 from shillelagh.filters import Equal, Filter, Range
-from shillelagh.types import RequestedOrder, Row
+from shillelagh.typing import RequestedOrder, Row
 from sqlalchemy import MetaData, Table
 from sqlalchemy.engine.url import URL
 from sqlalchemy.exc import NoSuchTableError
@@ -102,20 +101,19 @@ class SupersetAPSWDialect(APSWDialect):
 
     name = "superset"
 
-    # pylint: disable=unused-argument
     def create_connect_args(self, url: URL) -> Tuple[Tuple[()], Dict[str, Any]]:
         return (
             (),
             {
                 "path": ":memory:",
                 "adapters": ["superset"],
-                "adapter_args": {"supersetshillelaghadapter": (url.username,)},
+                "adapter_kwargs": {"superset": {"username": url.username}},
                 "safe": True,
                 "isolation_level": self.isolation_level,
             },
         )
 
-    # pylint: disable=unused-argument, no-self-use
+    # pylint: disable=unused-argument
     def get_schema_names(
         self, connection: _ConnectionFairy, **kwargs: Any
     ) -> List[str]:
@@ -174,8 +172,8 @@ class SupersetShillelaghAdapter(Adapter):
     }
 
     @staticmethod
-    def supports(uri: str) -> bool:
-        # An URL for a table has the format superset.database[.catalog][.schema].table,
+    def supports(uri: str, fast: bool = True, **kwargs: Any) -> bool:
+        # An URL for a table has the format superset.database[[.catalog].schema].table,
         # eg, superset.examples.birth_names
         parsed = urllib.parse.urlparse(uri)
         parts = parsed.path.split(".")
@@ -191,14 +189,18 @@ class SupersetShillelaghAdapter(Adapter):
             return parts[1], None, parts[2], parts[3]
         return tuple(parts[1:])  # type: ignore
 
-    def __init__(
+    def __init__(  # pylint: disable=too-many-arguments
         self,
         database: str,
         catalog: Optional[str],
         schema: Optional[str],
         table: str,
         username: str,
+        *args: Any,
+        **kwargs: Any,
     ):
+        super().__init__(*args, **kwargs)
+
         self.database = database
         self.catalog = catalog
         self.schema = schema
@@ -215,6 +217,12 @@ class SupersetShillelaghAdapter(Adapter):
         return class_(filters=[Equal, Range], order=Order.ANY, exact=True)
 
     def _set_columns(self) -> None:
+        """
+        Inspect the table and get its columns.
+
+        This is done on initialization because it's expensive.
+        """
+        # pylint: disable=import-outside-toplevel
         from superset.models.core import Database
 
         database = (
@@ -225,22 +233,27 @@ class SupersetShillelaghAdapter(Adapter):
         self._allow_dml = database.allow_dml
 
         # verify permissions
-        # set user since the adapter runs in a different thread
-        g.user = security_manager.get_user_by_username(self.username)
         table = sql_parse.Table(self.table, self.schema, self.catalog)
-        security_manager.raise_for_access(database=database, table=table)
+        security_manager.raise_for_access(
+            database=database,
+            table=table,
+            username=self.username,
+        )
 
         # fetch column names and types
         self.engine = database.get_sqla_engine()
         metadata = MetaData()
         try:
             self._table = Table(
-                self.table, metadata, autoload=True, autoload_with=self.engine,
+                self.table,
+                metadata,
+                autoload=True,
+                autoload_with=self.engine,
             )
-        except NoSuchTableError:
-            raise ProgrammingError(f"Table does not exist: {self.table}")
+        except NoSuchTableError as ex:
+            raise ProgrammingError(f"Table does not exist: {self.table}") from ex
 
-        # find row ID column; we can only updat/edelete data into a table with a
+        # find row ID column; we can only update/delete data into a table with a
         # single integer primary key
         primary_keys = [
             column for column in list(self._table.primary_key) if column.primary_key
@@ -254,11 +267,17 @@ class SupersetShillelaghAdapter(Adapter):
         }
 
     def get_columns(self) -> Dict[str, Field]:
+        """
+        Return table columns.
+        """
         return self.columns
 
     def _build_sql(
         self, bounds: Dict[str, Filter], order: List[Tuple[str, RequestedOrder]]
     ) -> Select:
+        """
+        Build SQLAlchemy query object.
+        """
         query = select([self._table])
 
         for column_name, filter_ in bounds.items():

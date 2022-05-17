@@ -275,7 +275,12 @@ class SupersetSecurityManager(  # pylint: disable=too-many-public-methods
         database_name = schema_permission.split(".")[0][1:-1]
         return DatabaseAndSchema(database_name, schema_name)
 
-    def can_access(self, permission_name: str, view_name: str) -> bool:
+    def can_access(
+        self,
+        permission_name: str,
+        view_name: str,
+        username: Optional[str] = None,
+    ) -> bool:
         """
         Return True if the user can access the FAB permission/view, False otherwise.
 
@@ -286,22 +291,27 @@ class SupersetSecurityManager(  # pylint: disable=too-many-public-methods
         :param view_name: The FAB view-menu name
         :returns: Whether the user can access the FAB permission/view
         """
+        if hasattr(g, "user"):
+            user = g.user
+        elif username:
+            user = self.find_user(username=username)
+        else:
+            return False
 
-        user = g.user
         if user.is_anonymous:
             return self.is_item_public(permission_name, view_name)
         return self._has_view_access(user, permission_name, view_name)
 
-    def can_access_all_queries(self) -> bool:
+    def can_access_all_queries(self, username: Optional[str] = None) -> bool:
         """
         Return True if the user can access all SQL Lab queries, False otherwise.
 
         :returns: Whether the user can access all queries
         """
 
-        return self.can_access("all_query_access", "all_query_access")
+        return self.can_access("all_query_access", "all_query_access", username)
 
-    def can_access_all_datasources(self) -> bool:
+    def can_access_all_datasources(self, username: Optional[str] = None) -> bool:
         """
         Return True if the user can fully access all the Superset datasources, False
         otherwise.
@@ -309,9 +319,13 @@ class SupersetSecurityManager(  # pylint: disable=too-many-public-methods
         :returns: Whether the user can fully access all Superset datasources
         """
 
-        return self.can_access("all_datasource_access", "all_datasource_access")
+        return self.can_access(
+            "all_datasource_access",
+            "all_datasource_access",
+            username,
+        )
 
-    def can_access_all_databases(self) -> bool:
+    def can_access_all_databases(self, username: Optional[str] = None) -> bool:
         """
         Return True if the user can fully access all the Superset databases, False
         otherwise.
@@ -319,9 +333,13 @@ class SupersetSecurityManager(  # pylint: disable=too-many-public-methods
         :returns: Whether the user can fully access all Superset databases
         """
 
-        return self.can_access("all_database_access", "all_database_access")
+        return self.can_access("all_database_access", "all_database_access", username)
 
-    def can_access_database(self, database: "Database") -> bool:
+    def can_access_database(
+        self,
+        database: "Database",
+        username: Optional[str] = None,
+    ) -> bool:
         """
         Return True if the user can fully access the Superset database, False otherwise.
 
@@ -332,12 +350,16 @@ class SupersetSecurityManager(  # pylint: disable=too-many-public-methods
         """
 
         return (
-            self.can_access_all_datasources()
-            or self.can_access_all_databases()
-            or self.can_access("database_access", database.perm)  # type: ignore
+            self.can_access_all_datasources(username)
+            or self.can_access_all_databases(username)
+            or self.can_access("database_access", database.perm, username)  # type: ignore
         )
 
-    def can_access_schema(self, datasource: "BaseDatasource") -> bool:
+    def can_access_schema(
+        self,
+        datasource: "BaseDatasource",
+        username: Optional[str] = None,
+    ) -> bool:
         """
         Return True if the user can fully access the schema associated with the Superset
         datasource, False otherwise.
@@ -350,12 +372,16 @@ class SupersetSecurityManager(  # pylint: disable=too-many-public-methods
         """
 
         return (
-            self.can_access_all_datasources()
-            or self.can_access_database(datasource.database)
-            or self.can_access("schema_access", datasource.schema_perm or "")
+            self.can_access_all_datasources(username)
+            or self.can_access_database(datasource.database, username)
+            or self.can_access("schema_access", datasource.schema_perm or "", username)
         )
 
-    def can_access_datasource(self, datasource: "BaseDatasource") -> bool:
+    def can_access_datasource(
+        self,
+        datasource: "BaseDatasource",
+        username: Optional[str] = None,
+    ) -> bool:
         """
         Return True if the user can fully access of the Superset datasource, False
         otherwise.
@@ -365,7 +391,7 @@ class SupersetSecurityManager(  # pylint: disable=too-many-public-methods
         """
 
         try:
-            self.raise_for_access(datasource=datasource)
+            self.raise_for_access(datasource=datasource, username=username)
         except SupersetSecurityException:
             return False
 
@@ -415,9 +441,8 @@ class SupersetSecurityManager(  # pylint: disable=too-many-public-methods
             },
         )
 
-    def get_table_access_error_msg(  # pylint: disable=no-self-use
-        self, tables: Set["Table"]
-    ) -> str:
+    @staticmethod
+    def get_table_access_error_msg(tables: Set["Table"]) -> str:
         """
         Return the error message for the denied SQL tables.
 
@@ -1008,6 +1033,7 @@ class SupersetSecurityManager(  # pylint: disable=too-many-public-methods
         query_context: Optional["QueryContext"] = None,
         table: Optional["Table"] = None,
         viz: Optional["BaseViz"] = None,
+        username: Optional[str] = None,
     ) -> None:
         """
         Raise an exception if the user cannot access the resource.
@@ -1032,7 +1058,7 @@ class SupersetSecurityManager(  # pylint: disable=too-many-public-methods
 
             database = cast("Database", database)
 
-            if self.can_access_database(database):
+            if self.can_access_database(database, username=username):
                 return
 
             if query:
@@ -1048,14 +1074,21 @@ class SupersetSecurityManager(  # pylint: disable=too-many-public-methods
             for table_ in tables:
                 schema_perm = self.get_schema_perm(database, schema=table_.schema)
 
-                if not (schema_perm and self.can_access("schema_access", schema_perm)):
+                if not (
+                    schema_perm
+                    and self.can_access("schema_access", schema_perm, username)
+                ):
                     datasources = SqlaTable.query_datasources_by_name(
                         self.get_session, database, table_.table, schema=table_.schema
                     )
 
                     # Access to any datasource is suffice.
                     for datasource_ in datasources:
-                        if self.can_access("datasource_access", datasource_.perm):
+                        if self.can_access(
+                            "datasource_access",
+                            datasource_.perm,
+                            username,
+                        ):
                             break
                     else:
                         denied.add(table_)
@@ -1079,8 +1112,8 @@ class SupersetSecurityManager(  # pylint: disable=too-many-public-methods
             )
 
             if not (
-                self.can_access_schema(datasource)
-                or self.can_access("datasource_access", datasource.perm or "")
+                self.can_access_schema(datasource, username)
+                or self.can_access("datasource_access", datasource.perm or "", username)
                 or (
                     should_check_dashboard_access
                     and self.can_access_based_on_dashboard(datasource)

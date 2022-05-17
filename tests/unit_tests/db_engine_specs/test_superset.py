@@ -14,23 +14,31 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
+# pylint: disable=redefined-outer-name, import-outside-toplevel, unused-argument
 
 import os
-from unittest import mock
+from typing import Iterator, TYPE_CHECKING
 
 import pytest
+from pytest_mock import MockFixture
 from sqlalchemy.engine import create_engine
 from sqlalchemy.exc import ProgrammingError
+from sqlalchemy.orm.session import Session
 
-from superset import db, security_manager
+from superset.errors import ErrorLevel, SupersetError, SupersetErrorType
 from superset.exceptions import SupersetSecurityException
-from superset.models.core import Database
 
-session = db.session
+if TYPE_CHECKING:
+    from superset.models.core import Database
 
 
-@pytest.fixture()
-def database1():
+@pytest.fixture
+def database1(session: Session) -> Iterator["Database"]:
+    from superset.models.core import Database
+
+    engine = session.connection().engine
+    Database.metadata.create_all(engine)  # pylint: disable=no-member
+
     database = Database(
         database_name="database1",
         sqlalchemy_uri="sqlite:///database1.db",
@@ -46,8 +54,8 @@ def database1():
     os.unlink("database1.db")
 
 
-@pytest.fixture()
-def table1(database1):
+@pytest.fixture
+def table1(session: Session, database1: "Database") -> Iterator[None]:
     engine = database1.get_sqla_engine()
     conn = engine.connect()
     conn.execute("CREATE TABLE table1 (a INTEGER NOT NULL PRIMARY KEY, b INTEGER)")
@@ -60,8 +68,10 @@ def table1(database1):
     session.commit()
 
 
-@pytest.fixture()
-def database2():
+@pytest.fixture
+def database2(session: Session) -> Iterator["Database"]:
+    from superset.models.core import Database
+
     database = Database(
         database_name="database2",
         sqlalchemy_uri="sqlite:///database2.db",
@@ -77,8 +87,8 @@ def database2():
     os.unlink("database2.db")
 
 
-@pytest.fixture()
-def table2(database2):
+@pytest.fixture
+def table2(session: Session, database2: "Database") -> Iterator[None]:
     engine = database2.get_sqla_engine()
     conn = engine.connect()
     conn.execute("CREATE TABLE table2 (a INTEGER NOT NULL PRIMARY KEY, b TEXT)")
@@ -91,9 +101,11 @@ def table2(database2):
     session.commit()
 
 
-@mock.patch("superset.security.manager.g")
-def test_superset(g, app_context, table1):
-    g.user = security_manager.find_user("admin")
+def test_superset(mocker: MockFixture, app_context: None, table1: None) -> None:
+    """
+    Simple test querying a table.
+    """
+    mocker.patch("superset.db_engine_specs.superset.security_manager")
 
     engine = create_engine("superset://")
     conn = engine.connect()
@@ -101,9 +113,16 @@ def test_superset(g, app_context, table1):
     assert list(results) == [(1, 10), (2, 20)]
 
 
-@mock.patch("superset.security.manager.g")
-def test_superset_joins(g, app_context, table1, table2):
-    g.user = security_manager.find_user("admin")
+def test_superset_joins(
+    mocker: MockFixture,
+    app_context: None,
+    table1: None,
+    table2: None,
+) -> None:
+    """
+    A test joining across databases.
+    """
+    mocker.patch("superset.db_engine_specs.superset.security_manager")
 
     engine = create_engine("superset://")
     conn = engine.connect()
@@ -118,9 +137,18 @@ def test_superset_joins(g, app_context, table1, table2):
     assert list(results) == [(10, "ten"), (20, "twenty")]
 
 
-@mock.patch("superset.security.manager.g")
-def test_dml(g, app_context, table1, table2):
-    g.user = security_manager.find_user("admin")
+def test_dml(
+    mocker: MockFixture,
+    app_context: None,
+    table1: None,
+    table2: None,
+) -> None:
+    """
+    DML tests.
+
+    Test that we can update/delete data, only if DML is enabled.
+    """
+    mocker.patch("superset.db_engine_specs.superset.security_manager")
 
     engine = create_engine("superset://")
     conn = engine.connect()
@@ -139,21 +167,39 @@ def test_dml(g, app_context, table1, table2):
         conn.execute(
             """INSERT INTO "superset.database2.table2" (a, b) VALUES (3, 'thirty')"""
         )
-    assert (
-        str(excinfo.value).strip()
-        == '(shillelagh.exceptions.ProgrammingError) DML not enabled in database "database2"\n[SQL: INSERT INTO "superset.database2.table2" (a, b) VALUES (3, \'thirty\')]\n(Background on this error at: http://sqlalche.me/e/13/f405)'
+    assert str(excinfo.value).strip() == (
+        "(shillelagh.exceptions.ProgrammingError) DML not enabled in database "
+        '"database2"\n[SQL: INSERT INTO "superset.database2.table2" (a, b) '
+        "VALUES (3, 'thirty')]\n(Background on this error at: "
+        "http://sqlalche.me/e/13/f405)"
     )
 
 
-@mock.patch("superset.security.manager.g")
-def test_security_manager(g, app_context, table1):
-    g.user = security_manager.find_user("gamma")
+def test_security_manager(mocker: MockFixture, app_context: None, table1: None) -> None:
+    """
+    Test that we use the security manager to check for permissions.
+    """
+    security_manager = mocker.MagicMock()
+    mocker.patch(
+        "superset.db_engine_specs.superset.security_manager",
+        new=security_manager,
+    )
+    security_manager.raise_for_access.side_effect = SupersetSecurityException(
+        SupersetError(
+            error_type=SupersetErrorType.TABLE_SECURITY_ACCESS_ERROR,
+            message=(
+                "You need access to the following tables: `table1`,\n            "
+                "`all_database_access` or `all_datasource_access` permission"
+            ),
+            level=ErrorLevel.ERROR,
+        )
+    )
 
     engine = create_engine("superset://")
     conn = engine.connect()
     with pytest.raises(SupersetSecurityException) as excinfo:
         conn.execute('SELECT * FROM "superset.database1.table1"')
-    assert (
-        str(excinfo.value)
-        == "You need access to the following tables: `table1`,\n            `all_database_access` or `all_datasource_access` permission"
+    assert str(excinfo.value) == (
+        "You need access to the following tables: `table1`,\n            "
+        "`all_database_access` or `all_datasource_access` permission"
     )
