@@ -125,6 +125,10 @@ F = TypeVar("F", bound=Callable[..., Any])
 
 
 def check_dml(method: F) -> F:
+    """
+    Decorator that prevents DML against databases where it's not allowed.
+    """
+
     @wraps(method)
     def wrapper(self: "SupersetShillelaghAdapter", *args: Any, **kwargs: Any) -> Any:
         # pylint: disable=protected-access
@@ -136,6 +140,10 @@ def check_dml(method: F) -> F:
 
 
 def has_rowid(method: F) -> F:
+    """
+    Decorator that prevents updates/deletes on tables without a rowid.
+    """
+
     @wraps(method)
     def wrapper(self: "SupersetShillelaghAdapter", *args: Any, **kwargs: Any) -> Any:
         # pylint: disable=protected-access
@@ -159,6 +167,7 @@ class SupersetShillelaghAdapter(Adapter):
     as a proxy to Superset tables.
     """
 
+    # no access to the filesystem
     safe = True
 
     type_map: Dict[Any, Type[Field]] = {
@@ -173,14 +182,27 @@ class SupersetShillelaghAdapter(Adapter):
 
     @staticmethod
     def supports(uri: str, fast: bool = True, **kwargs: Any) -> bool:
-        # An URL for a table has the format superset.database[[.catalog].schema].table,
-        # eg, superset.examples.birth_names
+        """
+        Return if a table is supported by the adapter.
+
+        An URL for a table has the format superset.database[[.catalog].schema].table,
+        eg, `superset.examples.birth_names`.
+        """
         parsed = urllib.parse.urlparse(uri)
         parts = parsed.path.split(".")
         return 3 <= len(parts) <= 5 and parts[0] == "superset"
 
     @staticmethod
     def parse_uri(uri: str) -> Tuple[str, Optional[str], Optional[str], str]:
+        """
+        Parse the SQLAlchemy URI into arguments for the class.
+
+        This splits the URI into database, catalog, schema, and table name:
+
+            >>> SupersetShillelaghAdapter.parse_uri('superset.examples.birth_names')
+            ('examples', None, None, 'birth_names')
+
+        """
         parsed = urllib.parse.urlparse(uri)
         parts = parsed.path.split(".")
         if len(parts) == 3:
@@ -207,12 +229,21 @@ class SupersetShillelaghAdapter(Adapter):
         self.table = table
         self.username = username
 
+        # If the table has a single integer primary key we use that as the row ID in order
+        # to perform updates and deletes. Otherwise we can only do inserts and selects.
         self._rowid: Optional[str] = None
+
+        # Does the database allow DML?
         self._allow_dml: bool = False
+
+        # Read column information from the database, and store it for later.
         self._set_columns()
 
     @classmethod
     def get_field(cls, python_type: Any) -> Field:
+        """
+        Convert a Python type into a Shillelagh field.
+        """
         class_ = cls.type_map.get(python_type, Blob)
         return class_(filters=[Equal, Range], order=Order.ANY, exact=True)
 
@@ -305,6 +336,9 @@ class SupersetShillelaghAdapter(Adapter):
     def get_data(
         self, bounds: Dict[str, Filter], order: List[Tuple[str, RequestedOrder]]
     ) -> Iterator[Row]:
+        """
+        Return data for a `SELECT` statement.
+        """
         query = self._build_sql(bounds, order)
 
         connection = self.engine.connect()
@@ -316,6 +350,9 @@ class SupersetShillelaghAdapter(Adapter):
 
     @check_dml
     def insert_row(self, row: Row) -> int:
+        """
+        Insert a single row.
+        """
         row_id: Optional[int] = row.pop("rowid")
         if row_id and self._rowid:
             if row.get(self._rowid) != row_id:
@@ -338,6 +375,9 @@ class SupersetShillelaghAdapter(Adapter):
     @check_dml
     @has_rowid
     def delete_row(self, row_id: int) -> None:
+        """
+        Delete a single row given its row ID.
+        """
         # pylint: disable=no-value-for-parameter
         query = self._table.delete().where(self._table.c[self._rowid] == row_id)
         connection = self.engine.connect()
@@ -346,6 +386,11 @@ class SupersetShillelaghAdapter(Adapter):
     @check_dml
     @has_rowid
     def update_row(self, row_id: int, row: Row) -> None:
+        """
+        Update a single row given its row ID.
+
+        Note that the updated row might have a new row ID.
+        """
         new_row_id: Optional[int] = row.pop("rowid")
         if new_row_id:
             if row.get(self._rowid) != new_row_id:
