@@ -60,6 +60,7 @@ from typing_extensions import TypedDict
 from superset import security_manager, sql_parse
 from superset.databases.utils import make_url_safe
 from superset.errors import ErrorLevel, SupersetError, SupersetErrorType
+from superset.exceptions import OAuth2RedirectError
 from superset.models.sql_lab import Query
 from superset.sql_parse import ParsedQuery, Table
 from superset.superset_typing import ResultSetColumnType
@@ -149,6 +150,30 @@ class LimitMethod:  # pylint: disable=too-few-public-methods
     FETCH_MANY = "fetch_many"
     WRAP_SQL = "wrap_sql"
     FORCE_LIMIT = "force_limit"
+
+
+class OAuth2TokenResponse(TypedDict, total=False):
+    """
+    Type for an OAuth2 response when exchanging or refreshing tokens.
+    """
+
+    access_token: str
+    expires_in: int
+    scope: str
+    token_type: str
+
+    # only present when exchanging code for refresh/access tokens
+    refresh_token: str
+
+
+class OAuth2State(TypedDict):
+    """
+    Type for the state passed during OAuth2.
+    """
+
+    database_id: int
+    user_id: int
+    default_redirect_uri: str
 
 
 class BaseEngineSpec:  # pylint: disable=too-many-public-methods
@@ -1206,13 +1231,18 @@ class BaseEngineSpec:  # pylint: disable=too-many-public-methods
 
     @classmethod
     def modify_url_for_impersonation(
-        cls, url: URL, impersonate_user: bool, username: Optional[str]
+        cls,
+        url: URL,
+        impersonate_user: bool,
+        username: Optional[str],
+        access_token: Optional[str] = None,  # pylint: disable=unused-argument
     ) -> None:
         """
         Modify the SQL Alchemy URL object with the user to impersonate if applicable.
         :param url: SQLAlchemy URL object
         :param impersonate_user: Flag indicating if impersonation is enabled
         :param username: Effective username
+        :param access_token: OAuth2 token for the user
         """
         if impersonate_user and username is not None:
             url.username = username
@@ -1235,10 +1265,11 @@ class BaseEngineSpec:  # pylint: disable=too-many-public-methods
         """
 
     @classmethod
-    def execute(  # pylint: disable=unused-argument
+    def execute(
         cls,
         cursor: Any,
         query: str,
+        database_id: int,
         **kwargs: Any,
     ) -> None:
         """
@@ -1256,8 +1287,14 @@ class BaseEngineSpec:  # pylint: disable=too-many-public-methods
             cursor.arraysize = cls.arraysize
         try:
             cursor.execute(query)
-        except Exception as ex:
-            raise cls.get_dbapi_mapped_exception(ex)
+        except cls.oauth2_exception as ex:
+            if cls.is_oauth2_enabled():
+                oauth_url = cls.get_oauth2_authorization_uri(database_id)
+                raise OAuth2RedirectError(oauth_url) from ex
+
+            raise cls.get_dbapi_mapped_exception(ex) from ex
+        except Exception as ex:  # pylint: disable=duplicate-except
+            raise cls.get_dbapi_mapped_exception(ex) from ex
 
     @classmethod
     def make_label_compatible(cls, label: str) -> Union[str, quoted_name]:
@@ -1536,6 +1573,34 @@ class BaseEngineSpec:  # pylint: disable=too-many-public-methods
     @classmethod
     def parse_sql(cls, sql: str) -> List[str]:
         return [str(s).strip(" ;") for s in sqlparse.parse(sql)]
+
+    # Driver-specific exception that should be mapped to OAuth2RedirectError
+    oauth2_exception = Exception
+
+    @staticmethod
+    def is_oauth2_enabled() -> bool:
+        return False
+
+    @staticmethod
+    def get_oauth2_authorization_uri(database_id: int) -> str:
+        """
+        Return URI for initial OAuth2 request.
+        """
+        raise NotImplementedError()
+
+    @staticmethod
+    def get_oauth2_token(code: str) -> OAuth2TokenResponse:
+        """
+        Exchange authorization code for refresh/access tokens.
+        """
+        raise NotImplementedError()
+
+    @staticmethod
+    def get_oauth2_fresh_token(refresh_token: str) -> OAuth2TokenResponse:
+        """
+        Refresh an access token that has expired.
+        """
+        raise NotImplementedError()
 
 
 # schema for adding a database by providing parameters instead of the

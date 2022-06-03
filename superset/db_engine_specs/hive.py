@@ -486,7 +486,11 @@ class HiveEngineSpec(PrestoEngineSpec):
 
     @classmethod
     def modify_url_for_impersonation(
-        cls, url: URL, impersonate_user: bool, username: Optional[str]
+        cls,
+        url: URL,
+        impersonate_user: bool,
+        username: Optional[str],
+        access_token: Optional[str] = None,
     ) -> None:
         """
         Modify the SQL Alchemy URL object with the user to impersonate if applicable.
@@ -526,7 +530,11 @@ class HiveEngineSpec(PrestoEngineSpec):
 
     @staticmethod
     def execute(  # type: ignore
-        cursor, query: str, async_: bool = False
+        cursor,
+        query: str,
+        database_id: int,
+        async_: bool = False,
+        **kwargs: Any,
     ):  # pylint: disable=arguments-differ
         kwargs = {"async": async_}
         cursor.execute(query, **kwargs)

@@ -74,7 +74,11 @@ class DrillEngineSpec(BaseEngineSpec):
 
     @classmethod
     def modify_url_for_impersonation(
-        cls, url: URL, impersonate_user: bool, username: Optional[str]
+        cls,
+        url: URL,
+        impersonate_user: bool,
+        username: Optional[str],
+        access_token: Optional[str] = None,
     ) -> None:
         """
         Modify the SQL Alchemy URL object with the user to impersonate if applicable.

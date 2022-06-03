@@ -948,7 +948,7 @@ class PrestoEngineSpec(BaseEngineSpec):  # pylint: disable=too-many-public-metho
             cursor = conn.cursor()
             sql = f"SHOW CREATE VIEW {schema}.{table}"
             try:
-                cls.execute(cursor, sql)
+                cls.execute(cursor, sql, database.id)
                 polled = cursor.poll()
 
                 while polled:

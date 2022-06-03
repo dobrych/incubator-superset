@@ -63,6 +63,7 @@ from superset.result_set import SupersetResultSet
 from superset.utils import cache as cache_util, core as utils
 from superset.utils.core import get_username
 from superset.utils.memoized import memoized
+from superset.utils.oauth2 import get_oauth2_access_token
 
 config = app.config
 custom_password_store = config["SQLALCHEMY_CUSTOM_PASSWORD_STORE"]
@@ -357,11 +358,15 @@ class Database(
         sqlalchemy_url = make_url_safe(self.sqlalchemy_uri_decrypted)
         self.db_engine_spec.adjust_database_uri(sqlalchemy_url, schema)
         effective_username = self.get_effective_user(sqlalchemy_url)
+        access_token = get_oauth2_access_token(self.id, g.user.id, self.db_engine_spec)
         # If using MySQL or Presto for example, will set url.username
         # If using Hive, will not do anything yet since that relies on a
         # configuration parameter instead.
         self.db_engine_spec.modify_url_for_impersonation(
-            sqlalchemy_url, self.impersonate_user, effective_username
+            sqlalchemy_url,
+            self.impersonate_user,
+            effective_username,
+            access_token,
         )
 
         masked_url = self.get_password_masked_url(sqlalchemy_url)
@@ -439,11 +444,11 @@ class Database(
             cursor = conn.cursor()
             for sql_ in sqls[:-1]:
                 _log_query(sql_)
-                self.db_engine_spec.execute(cursor, sql_)
+                self.db_engine_spec.execute(cursor, sql_, self.id)
                 cursor.fetchall()
 
             _log_query(sqls[-1])
-            self.db_engine_spec.execute(cursor, sqls[-1])
+            self.db_engine_spec.execute(cursor, sqls[-1], self.id)
 
             data = self.db_engine_spec.fetch_data(cursor)
             result_set = SupersetResultSet(
@@ -792,6 +797,30 @@ class Database(
     def get_dialect(self) -> Dialect:
         sqla_url = make_url_safe(self.sqlalchemy_uri_decrypted)
         return sqla_url.get_dialect()()
+
+
+class DatabaseUserOAuth2Tokens(Model, AuditMixinNullable):
+    """
+    Store (database, user) tokens.
+
+    Some cloud databases like BigQuery and Google Sheets allow users to authenticate via
+    OAuth, providing user tokens for data access. For databases like these we store the
+    access tokens and use them only for connections from that user and that database.
+    """
+
+    __tablename__ = "database_user_oauth2_tokens"
+
+    id = Column(Integer, primary_key=True)
+
+    user_id = Column(Integer, ForeignKey("ab_user.id"))
+    user = relationship(security_manager.user_model, foreign_keys=[user_id])
+
+    database_id = Column(Integer, ForeignKey("dbs.id"), nullable=False)
+    database = relationship("Database", foreign_keys=[database_id])
+
+    access_token = Column(encrypted_field_factory.create(Text), nullable=True)
+    access_token_expiration = Column(DateTime, nullable=True)
+    refresh_token = Column(encrypted_field_factory.create(Text), nullable=True)
 
 
 sqla.event.listen(Database, "after_insert", security_manager.set_perm)
