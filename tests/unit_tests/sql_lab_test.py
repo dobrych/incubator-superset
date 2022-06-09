@@ -88,7 +88,7 @@ def test_execute_sql_statement_with_rls(
     cursor = mocker.MagicMock()
     SupersetResultSet = mocker.patch("superset.sql_lab.SupersetResultSet")
     mocker.patch(
-        "superset.sql_lab.insert_rls",
+        "superset.sql_lab.insert_rls_in_predicate",
         return_value=sqlparse.parse("SELECT * FROM sales WHERE organization_id=42")[0],
     )
     mocker.patch("superset.sql_lab.is_feature_enabled", return_value=True)
@@ -115,13 +115,13 @@ def test_execute_sql_statement_with_rls(
     SupersetResultSet.assert_called_with([(42,)], cursor.description, db_engine_spec)
 
 
-def test_sql_lab_insert_rls(
+def test_sql_lab_insert_rls_in_predicate(
     mocker: MockerFixture,
     session: Session,
     app_context: None,
 ) -> None:
     """
-    Integration test for `insert_rls`.
+    Integration test for `insert_rls_in_predicate`.
     """
     from flask_appbuilder.security.sqla.models import Role, User
 

@@ -44,7 +44,7 @@ from superset.exceptions import (
 )
 from superset.models.core import Database
 from superset.result_set import SupersetResultSet
-from superset.sql_parse import has_table_query, insert_rls, ParsedQuery
+from superset.sql_parse import has_table_query, insert_rls_in_predicate, ParsedQuery
 from superset.superset_typing import ResultSetColumnType
 from superset.utils.memoized import memoized
 
@@ -174,7 +174,7 @@ def validate_adhoc_subquery(
                         level=ErrorLevel.ERROR,
                     )
                 )
-            statement = insert_rls(statement, database_id, default_schema)
+            statement = insert_rls_in_predicate(statement, database_id, default_schema)
         statements.append(statement)
 
     return ";\n".join(str(statement) for statement in statements)
