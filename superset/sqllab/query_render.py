@@ -42,6 +42,22 @@ PARAMETER_MISSING_ERR = (
 )
 
 
+def apply_dbt(sql: str) -> str:
+    from dbt.clients import jinja
+    from dbt.context.providers import generate_runtime_model_context
+    from dbt.lib import get_dbt_config
+    from dbt.parser.manifest import ManifestLoader
+    from dbt.tracking import do_not_track
+
+    do_not_track()
+    project_dir = "/Users/beto/Projects/dbt-integration-blog-post/jaffle_shop"
+    config = get_dbt_config(project_dir)
+    manifest = ManifestLoader.get_full_manifest(config)
+    manifest_node = manifest.nodes["model.jaffle_shop.customers"]
+    context = generate_runtime_model_context(manifest_node, config, manifest)
+    return jinja.get_rendered(sql, context)
+
+
 class SqlQueryRenderImpl(SqlQueryRender):
     _sql_template_processor_factory: Callable[..., BaseTemplateProcessor]
 
@@ -57,6 +73,8 @@ class SqlQueryRenderImpl(SqlQueryRender):
             sql_template_processor = self._sql_template_processor_factory(
                 database=query_model.database, query=query_model
             )
+
+            query_model.sql = apply_dbt(query_model.sql)
 
             rendered_query = sql_template_processor.process_template(
                 query_model.sql, **execution_context.template_params
