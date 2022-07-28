@@ -31,6 +31,14 @@ if TYPE_CHECKING:
     from superset.connectors.sqla.models import TableColumn
     from superset.models.core import Database
 
+try:
+    from pydruid.db.sqlalchemy import type_map
+
+    # monkeypatch complex Druid types until we have a new pydruid release
+    type_map["complex<hllsketch>"] = types.BLOB
+except ImportError:
+    pass
+
 logger = logging.getLogger()
 
 
@@ -122,17 +130,3 @@ class DruidEngineSpec(BaseEngineSpec):
         Convert from number of milliseconds since the epoch to a timestamp.
         """
         return "MILLIS_TO_TIMESTAMP({col})"
-
-    @classmethod
-    def get_columns(
-        cls, inspector: Inspector, table_name: str, schema: Optional[str]
-    ) -> List[Dict[str, Any]]:
-        """
-        Update the Druid type map.
-        """
-        # pylint: disable=import-outside-toplevel
-        from pydruid.db.sqlalchemy import type_map
-
-        type_map["complex<hllsketch>"] = types.BLOB
-
-        return super().get_columns(inspector, table_name, schema)
